@@ -1,0 +1,44 @@
+# Environment
+.env
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Data
+data/
+*.snap
+*.snapshots/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+.docker/
+
+# Test
+.coverage
+htmlcov/
+.pytest_cache/
+coverage.xml
+
+# Alembic
+packages/storage/migrations/versions/*.pyc
+
+# Logs
+*.log
