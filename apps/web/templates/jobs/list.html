@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Jobs{% endblock %}
+
+{% block content %}
+<h1>Jobs</h1>
+
+<div class="grid">
+    <select id="status-filter" onchange="loadJobs()">
+        <option value="">All Statuses</option>
+        <option value="queued">Queued</option>
+        <option value="running">Running</option>
+        <option value="success">Success</option>
+        <option value="failed">Failed</option>
+    </select>
+</div>
+
+<div id="jobs-table"><p>Loading...</p></div>
+<div id="jobs-pagination" style="margin-top:1rem"></div>
+
+<script>
+let currentPage = 1;
+
+async function loadJobs(page = 1) {
+    currentPage = page;
+    const status = document.getElementById('status-filter').value;
+    const params = new URLSearchParams({page, page_size: 20});
+    if (status) params.set('status', status);
+
+    try {
+        const res = await fetch('/api/jobs?' + params);
+        const data = await res.json();
+        const container = document.getElementById('jobs-table');
+
+        if (data.items.length === 0) {
+            container.innerHTML = '<p><em>No jobs found.</em></p>';
+            return;
+        }
+
+        let html = '<table><thead><tr><th>Type</th><th>Status</th><th>Source</th><th>Error</th><th>Retries</th><th>Created</th><th>Actions</th></tr></thead><tbody>';
+        for (const job of data.items) {
+            html += `<tr>
+                <td>${job.job_type}</td>
+                <td><span class="status-${job.status}">${job.status}</span></td>
+                <td><small>${job.source_id || '--'}</small></td>
+                <td>${job.error_code ? '<span class="error-code">' + job.error_code + '</span>' : '--'}</td>
+                <td>${job.retry_count}</td>
+                <td><small>${new Date(job.created_at).toLocaleString()}</small></td>
+                <td>
+                    ${job.status === 'failed' ? '<a href="#" onclick="retryJob(\'' + job.id + '\')">Retry</a>' : '--'}
+                </td>
+            </tr>`;
+        }
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    } catch(e) { console.error(e); }
+}
+
+async function retryJob(jobId) {
+    try {
+        const res = await fetch('/api/jobs/' + jobId + '/retry', {method: 'POST'});
+        const data = await res.json();
+        if (res.ok) {
+            alert(data.message);
+            loadJobs(currentPage);
+        } else {
+            alert('Error: ' + data.detail);
+        }
+    } catch(e) { alert('Network error'); }
+}
+
+loadJobs();
+</script>
+{% endblock %}

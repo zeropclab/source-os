@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Add Source{% endblock %}
+
+{% block content %}
+<h1>Add Source</h1>
+
+<form id="source-form">
+    <label for="name">Name</label>
+    <input type="text" id="name" name="name" required placeholder="My News Source">
+
+    <label for="platform">Platform</label>
+    <select id="platform" name="platform" required onchange="updateSourceType()">
+        <option value="rss">RSS Feed</option>
+        <option value="website">Website (List Page)</option>
+        <option value="youtube">YouTube Channel</option>
+        <option value="podcast">Podcast</option>
+    </select>
+
+    <label for="source_type">Source Type</label>
+    <select id="source_type" name="source_type" required>
+        <option value="rss_feed">RSS Feed</option>
+        <option value="website_list">Website List</option>
+        <option value="youtube_channel">YouTube Channel</option>
+        <option value="podcast">Podcast</option>
+    </select>
+
+    <label for="url">URL</label>
+    <input type="url" id="url" name="url" required placeholder="https://example.com/feed.xml">
+
+    <fieldset>
+        <legend>Monitor Policy</legend>
+        <label for="frequency">Check Frequency</label>
+        <select id="frequency" name="frequency">
+            <option value="1h">Every 1 hour</option>
+            <option value="2h" selected>Every 2 hours</option>
+            <option value="6h">Every 6 hours</option>
+            <option value="12h">Every 12 hours</option>
+            <option value="24h">Every 24 hours</option>
+        </select>
+    </fieldset>
+
+    <fieldset>
+        <legend>Fetch Policy</legend>
+        <label for="preferred_strategy">Preferred Strategy</label>
+        <select id="preferred_strategy" name="preferred_strategy">
+            <option value="http">HTTP Direct</option>
+            <option value="browser">Browser (Playwright)</option>
+        </select>
+        <label><input type="checkbox" id="download_media" name="download_media"> Download Media (audio/video)</label>
+    </fieldset>
+
+    <fieldset>
+        <legend>Compliance</legend>
+        <label for="max_rph">Max Requests per Hour</label>
+        <input type="number" id="max_rph" name="max_rph" value="20" min="1" max="1000">
+        <label><input type="checkbox" id="respect_robots" name="respect_robots" checked> Respect robots.txt</label>
+    </fieldset>
+
+    <button type="submit">Create Source</button>
+</form>
+
+<div id="result" style="margin-top:1rem"></div>
+
+<script>
+function updateSourceType() {
+    const platform = document.getElementById('platform').value;
+    const typeMap = {rss:'rss_feed', website:'website_list', youtube:'youtube_channel', podcast:'podcast'};
+    document.getElementById('source_type').value = typeMap[platform];
+}
+
+document.getElementById('source-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const body = {
+        name: document.getElementById('name').value,
+        platform: document.getElementById('platform').value,
+        source_type: document.getElementById('source_type').value,
+        url: document.getElementById('url').value,
+        monitor_policy: {
+            frequency: document.getElementById('frequency').value,
+            method: document.getElementById('platform').value === 'rss' ? 'rss_poll' : 'list_page'
+        },
+        fetch_policy: {
+            preferred_strategy: document.getElementById('preferred_strategy').value,
+            extractors: ["trafilatura", "readability"],
+            download_media: document.getElementById('download_media').checked
+        },
+        compliance_policy: {
+            respect_robots: document.getElementById('respect_robots').checked,
+            max_requests_per_hour: parseInt(document.getElementById('max_rph').value)
+        }
+    };
+
+    try {
+        const res = await fetch('/api/sources', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (res.ok) {
+            document.getElementById('result').innerHTML = `<article class="pico-color-green-100"><p>Source created! <a href="/sources/${data.id}">View →</a></p></article>`;
+            e.target.reset();
+        } else {
+            document.getElementById('result').innerHTML = `<article class="pico-color-red-100"><p>Error: ${data.detail || JSON.stringify(data)}</p></article>`;
+        }
+    } catch(err) {
+        document.getElementById('result').innerHTML = `<article class="pico-color-red-100"><p>Network error: ${err.message}</p></article>`;
+    }
+});
+</script>
+{% endblock %}

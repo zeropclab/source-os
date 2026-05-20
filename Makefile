@@ -16,10 +16,10 @@ scheduler:
 	python -m apps.worker.scheduler
 
 test:
-	DATABASE_URL=postgresql+asyncpg://postgres:sourceos@localhost:5432/sourceos_test \
+	DATABASE_URL=postgresql+asyncpg://heisenborg@localhost:5432/sourceos_test \
 	REDIS_URL=redis://localhost:6379/1 \
 	STORAGE_ROOT=/tmp/sourceos-test \
-	pytest -v --cov --cov-report=term-missing
+	pytest -v --no-cov
 
 lint:
 	ruff check .

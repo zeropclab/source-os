@@ -1,8 +1,18 @@
 """Async SQLAlchemy engine and session factory."""
 
 import os
+from pathlib import Path
+
+from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine, AsyncSession
 from sqlalchemy.orm import DeclarativeBase
+
+# Ensure .env is loaded before reading DATABASE_URL
+_load_paths = [Path(__file__).resolve().parent.parent.parent / ".env"]
+for _p in _load_paths:
+    if _p.exists():
+        load_dotenv(_p)
+        break
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:sourceos@localhost:5432/sourceos")
 

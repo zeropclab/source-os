@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Source {{ source_id }}{% endblock %}
+
+{% block content %}
+<h1>Source Detail</h1>
+
+<div id="source-info"><p>Loading...</p></div>
+
+<h2>Items</h2>
+<div id="source-items"><p>Loading...</p></div>
+
+<script>
+async function loadSource() {
+    try {
+        const res = await fetch('/api/sources/{{ source_id }}');
+        const src = await res.json();
+
+        document.getElementById('source-info').innerHTML = `
+            <article>
+                <h2>${src.name}</h2>
+                <table>
+                    <tr><th>Platform</th><td>${src.platform}</td></tr>
+                    <tr><th>Type</th><td>${src.source_type}</td></tr>
+                    <tr><th>URL</th><td><a href="${src.url}" target="_blank">${src.url}</a></td></tr>
+                    <tr><th>Status</th><td><span class="status-${src.status}">${src.status}</span></td></tr>
+                    <tr><th>Last Checked</th><td>${src.last_checked_at ? new Date(src.last_checked_at).toLocaleString() : 'Never'}</td></tr>
+                    <tr><th>Created</th><td>${new Date(src.created_at).toLocaleString()}</td></tr>
+                </table>
+            </article>
+        `;
+
+        // Load items for this source
+        const itemsRes = await fetch('/api/items?source_id={{ source_id }}&page_size=50');
+        const itemsData = await itemsRes.json();
+
+        const itemsContainer = document.getElementById('source-items');
+        if (itemsData.items.length === 0) {
+            itemsContainer.innerHTML = '<p><em>No items collected yet.</em></p>';
+            return;
+        }
+
+        let html = '<table><thead><tr><th>Title</th><th>Discovered</th><th>Status</th><th>Score</th></tr></thead><tbody>';
+        for (const item of itemsData.items) {
+            html += `<tr>
+                <td><a href="/api/items/${item.id}">${item.title || 'Untitled'}</a></td>
+                <td><small>${new Date(item.discovered_at).toLocaleString()}</small></td>
+                <td><span class="status-${item.status}">${item.status}</span></td>
+                <td>--</td>
+            </tr>`;
+        }
+        html += '</tbody></table>';
+        itemsContainer.innerHTML = html;
+
+    } catch(e) {
+        console.error('Failed to load source:', e);
+    }
+}
+
+loadSource();
+</script>
+{% endblock %}

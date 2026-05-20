@@ -1,0 +1,35 @@
+/* SourceOS — minimal custom styles on top of Pico.css */
+
+.status-active { color: var(--pico-color-green-400); font-weight: bold; }
+.status-paused { color: var(--pico-color-amber-400); }
+.status-error { color: var(--pico-color-red-400); font-weight: bold; }
+.status-discovered { color: var(--pico-color-blue-400); }
+.status-fetched { color: var(--pico-color-green-400); }
+.status-failed { color: var(--pico-color-red-400); }
+.status-success { color: var(--pico-color-green-400); }
+.status-queued { color: var(--pico-color-grey-400); }
+.status-running { color: var(--pico-color-amber-400); }
+
+.badge {
+    display: inline-block;
+    padding: 0.1rem 0.5rem;
+    background: var(--pico-color-grey-100);
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 500;
+}
+
+.error-code {
+    font-family: monospace;
+    font-size: 0.85rem;
+    background: var(--pico-color-red-50);
+    padding: 0.1rem 0.4rem;
+    border-radius: 3px;
+}
+
+.markdown-body {
+    max-width: 800px;
+    line-height: 1.7;
+}
+.markdown-body img { max-width: 100%; }
+.markdown-body pre { overflow-x: auto; }

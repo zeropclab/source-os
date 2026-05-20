@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Items{% endblock %}
+
+{% block content %}
+<h1>Items</h1>
+
+<div class="grid">
+    <input type="search" id="search-input" placeholder="Search items..." oninput="search()" style="flex:1">
+    <select id="source-filter" onchange="search()">
+        <option value="">All Sources</option>
+    </select>
+</div>
+
+<div id="items-table"><p>Loading...</p></div>
+<div id="items-pagination" style="margin-top:1rem"></div>
+
+<script>
+let currentPage = 1;
+
+async function loadSources() {
+    try {
+        const res = await fetch('/api/sources?page_size=100');
+        const data = await res.json();
+        const select = document.getElementById('source-filter');
+        for (const src of data.items) {
+            select.innerHTML += `<option value="${src.id}">${src.name}</option>`;
+        }
+    } catch(e) { console.error(e); }
+}
+
+async function search(page = 1) {
+    currentPage = page;
+    const q = document.getElementById('search-input').value;
+    const sourceId = document.getElementById('source-filter').value;
+    const params = new URLSearchParams({page, page_size: 20});
+    if (q) params.set('q', q);
+    if (sourceId) params.set('source_id', sourceId);
+
+    try {
+        const res = await fetch('/api/items?' + params);
+        const data = await res.json();
+        const container = document.getElementById('items-table');
+
+        if (data.items.length === 0) {
+            container.innerHTML = '<p><em>No items found.</em></p>';
+            return;
+        }
+
+        let html = '<table><thead><tr><th>Title</th><th>Source</th><th>Published</th><th>Score</th><th>Actions</th></tr></thead><tbody>';
+        for (const item of data.items) {
+            const pubDate = item.published_at ? new Date(item.published_at).toLocaleDateString() : '--';
+            const bestVersion = item.content_versions?.sort((a, b) => b.extraction_score - a.extraction_score)[0];
+            const score = bestVersion ? bestVersion.extraction_score.toFixed(2) : '--';
+            html += `<tr>
+                <td><strong><a href="/api/items/${item.id}">${item.title || 'Untitled'}</a></strong></td>
+                <td><small>${item.source_id}</small></td>
+                <td><small>${pubDate}</small></td>
+                <td>${score}</td>
+                <td>
+                    <a href="/api/items/${item.id}">View</a>
+                </td>
+            </tr>`;
+        }
+        html += '</tbody></table>';
+        container.innerHTML = html;
+
+        const totalPages = Math.ceil(data.total / 20);
+        let pageHtml = '';
+        if (totalPages > 1) {
+            for (let p = 1; p <= Math.min(totalPages, 20); p++) {
+                pageHtml += `<a href="#" onclick="search(${p})" role="button" class="${p === page ? '' : 'secondary'}">${p}</a> `;
+            }
+        }
+        document.getElementById('items-pagination').innerHTML = pageHtml;
+
+    } catch(e) { console.error(e); }
+}
+
+loadSources();
+search();
+</script>
+{% endblock %}

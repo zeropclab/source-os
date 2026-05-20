@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<h1>Dashboard</h1>
+
+<div class="grid">
+    <article>
+        <h3>Sources</h3>
+        <p id="stat-sources-total">--</p>
+        <small>Active / Total</small>
+        <footer><a href="/sources">Manage Sources →</a></footer>
+    </article>
+    <article>
+        <h3>Items Collected</h3>
+        <p id="stat-items-total">--</p>
+        <small>All time</small>
+        <footer><a href="/api/items">Browse Items →</a></footer>
+    </article>
+    <article>
+        <h3>Success Rate (24h)</h3>
+        <p id="stat-success-rate">--</p>
+        <small>Last 24 hours</small>
+        <footer><a href="/api/jobs">View Jobs →</a></footer>
+    </article>
+</div>
+
+<h2>Quick Actions</h2>
+<div class="grid">
+    <a href="/sources/create" role="button">Add Source</a>
+    <a href="/api/docs" role="button" class="secondary">API Docs (Swagger)</a>
+    <a href="#" role="button" class="secondary">Export All</a>
+</div>
+
+<h2>Recent Items</h2>
+<div id="recent-items">
+    <p>Loading...</p>
+</div>
+
+<script>
+async function loadStats() {
+    try {
+        const res = await fetch('/api/sources?page_size=1');
+        const srcData = await res.json();
+        document.getElementById('stat-sources-total').textContent = srcData.total + ' active';
+
+        const itemsRes = await fetch('/api/items?page_size=1');
+        const itemsData = await itemsRes.json();
+        document.getElementById('stat-items-total').textContent = itemsData.total;
+
+        const jobsRes = await fetch('/api/jobs?status=success&page_size=1');
+        const jobsData = await jobsRes.json();
+        const allJobsRes = await fetch('/api/jobs?page_size=1');
+        const allJobsData = await allJobsRes.json();
+        if (allJobsData.total > 0) {
+            const rate = ((jobsData.total / allJobsData.total) * 100).toFixed(1);
+            document.getElementById('stat-success-rate').textContent = rate + '%';
+        }
+    } catch(e) {
+        console.error('Failed to load stats:', e);
+    }
+}
+
+async function loadRecentItems() {
+    try {
+        const res = await fetch('/api/items?page_size=10');
+        const data = await res.json();
+        const container = document.getElementById('recent-items');
+        if (data.items.length === 0) {
+            container.innerHTML = '<p><em>No items collected yet. Add a source to get started!</em></p>';
+            return;
+        }
+        let html = '<table><thead><tr><th>Title</th><th>Source</th><th>Discovered</th><th>Status</th></tr></thead><tbody>';
+        for (const item of data.items) {
+            html += `<tr>
+                <td><a href="/api/items/${item.id}">${item.title || 'Untitled'}</a></td>
+                <td><small>${item.source_id}</small></td>
+                <td><small>${new Date(item.discovered_at).toLocaleString()}</small></td>
+                <td><span class="status-${item.status}">${item.status}</span></td>
+            </tr>`;
+        }
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    } catch(e) {
+        console.error('Failed to load items:', e);
+    }
+}
+
+loadStats();
+loadRecentItems();
+</script>
+{% endblock %}

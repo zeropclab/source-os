@@ -33,7 +33,7 @@ class SourceItem(Base):
     )
 
     source = relationship("Source", back_populates="items")
-    content_versions = relationship("ContentVersion", back_populates="item", lazy="dynamic")
+    content_versions = relationship("ContentVersion", back_populates="item", order_by="ContentVersion.version_no")
     comments = relationship("Comment", back_populates="item", lazy="dynamic")
     media_assets = relationship("MediaAsset", back_populates="item", lazy="dynamic")
     jobs = relationship("FetchJob", back_populates="item", lazy="dynamic")

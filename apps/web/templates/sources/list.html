@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Sources{% endblock %}
+
+{% block content %}
+<h1>Sources</h1>
+
+<div class="grid">
+    <a href="/sources/create" role="button">+ Add Source</a>
+</div>
+
+<div id="source-list">
+    <p>Loading...</p>
+</div>
+
+<div id="pagination" style="margin-top:1rem"></div>
+
+<script>
+let currentPage = 1;
+const pageSize = 20;
+
+async function loadSources(page = 1) {
+    try {
+        const params = new URLSearchParams({page, page_size: pageSize});
+        const res = await fetch('/api/sources?' + params);
+        const data = await res.json();
+
+        const container = document.getElementById('source-list');
+        if (data.items.length === 0) {
+            container.innerHTML = '<p><em>No sources yet. Add your first source!</em></p>';
+            return;
+        }
+
+        let html = '<table><thead><tr><th>Name</th><th>Platform</th><th>Type</th><th>Status</th><th>Last Checked</th><th>Actions</th></tr></thead><tbody>';
+        for (const src of data.items) {
+            const lastCheck = src.last_checked_at ? new Date(src.last_checked_at).toLocaleString() : 'Never';
+            html += `<tr>
+                <td><strong><a href="/sources/${src.id}">${src.name}</a></strong></td>
+                <td><span class="badge">${src.platform}</span></td>
+                <td>${src.source_type}</td>
+                <td><span class="status-${src.status}">${src.status}</span></td>
+                <td><small>${lastCheck}</small></td>
+                <td>
+                    <a href="/sources/${src.id}">View</a>
+                    <a href="#" onclick="deleteSource('${src.id}')" style="color:red;margin-left:0.5rem">Delete</a>
+                </td>
+            </tr>`;
+        }
+        html += '</tbody></table>';
+        container.innerHTML = html;
+
+        // Pagination
+        const totalPages = Math.ceil(data.total / pageSize);
+        let pageHtml = '';
+        if (totalPages > 1) {
+            for (let p = 1; p <= totalPages; p++) {
+                pageHtml += `<a href="#" onclick="loadSources(${p})" role="button" class="${p === page ? '' : 'secondary'}">${p}</a> `;
+            }
+        }
+        document.getElementById('pagination').innerHTML = pageHtml;
+
+    } catch(e) {
+        console.error('Failed to load sources:', e);
+    }
+}
+
+async function deleteSource(id) {
+    if (!confirm('Delete this source and all its items?')) return;
+    try {
+        await fetch('/api/sources/' + id, {method: 'DELETE'});
+        loadSources(currentPage);
+    } catch(e) {
+        alert('Failed to delete source');
+    }
+}
+
+loadSources();
+</script>
+{% endblock %}
