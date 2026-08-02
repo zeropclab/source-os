@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}Explore Ontology Hypotheses{% endblock %}
+
+{% block content %}
+<header class="workbench-heading">
+    <div>
+        <p class="eyebrow">Weak relation exploration</p>
+        <h1>Ontology Hypotheses</h1>
+        <p>
+            A relationship path can reveal a question worth testing. It is not a validated Need,
+            market size, willingness to pay, or profitability claim.
+        </p>
+    </div>
+</header>
+
+<div id="ontology-message" role="status" aria-live="polite"></div>
+<section class="workbench-grid">
+    <article>
+        <header><strong>Record falsifiable hypothesis</strong></header>
+        <form id="ontology-hypothesis-form">
+            <label>Relationship path <small>(one node per line; at least two)</small><textarea id="relationship-path" required></textarea></label>
+            <label>Source material<textarea id="source-material" required></textarea></label>
+            <label>Counterexample<textarea id="counterexample" required></textarea></label>
+            <label>Unknowns <small>(one per line)</small><textarea id="ontology-unknowns" required></textarea></label>
+            <label>Smallest validation action<textarea id="smallest-validation-action" required></textarea></label>
+            <button type="submit">Record hypothesis</button>
+        </form>
+    </article>
+    <article id="ontology-hypotheses"><p>Loading hypotheses…</p></article>
+</section>
+
+<script>
+    const lines = (id) => document.getElementById(id).value.split("\n").map((value) => value.trim()).filter(Boolean);
+    const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", "\"": "&quot;" }[character]));
+    const message = (text, kind = "success") => { document.getElementById("ontology-message").innerHTML = `<article class="message-${kind}">${escapeHtml(text)}</article>`; };
+    async function request(url, options = {}) { const response = await fetch(url, options); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : JSON.stringify(data)); return data; }
+    async function loadHypotheses() {
+        try {
+            const result = await request("/api/ontology-hypotheses");
+            const items = result.items.map((item) => `<article><header><strong>${escapeHtml(item.relationship_path.join(" → "))}</strong> <span class="badge">${escapeHtml(item.status)}</span></header><p><strong>Source:</strong> ${escapeHtml(item.source_material)}</p><p><strong>Counterexample:</strong> ${escapeHtml(item.counterexample)}</p><p><strong>Unknowns:</strong> ${escapeHtml(item.unknowns.join(", "))}</p><p><strong>Smallest action:</strong> ${escapeHtml(item.smallest_validation_action)}</p></article>`).join("") || "<p>No ontology hypotheses recorded. That is not evidence that no hidden need exists.</p>";
+            document.getElementById("ontology-hypotheses").innerHTML = `<header><strong>Recorded hypotheses</strong></header>${items}`;
+        } catch (error) { document.getElementById("ontology-hypotheses").innerHTML = `<p class="failure-detail">${escapeHtml(error.message)}</p>`; }
+    }
+    document.getElementById("ontology-hypothesis-form").onsubmit = async (event) => {
+        event.preventDefault();
+        try {
+            await request("/api/ontology-hypotheses", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ relationship_path: lines("relationship-path"), source_material: document.getElementById("source-material").value.trim(), counterexample: document.getElementById("counterexample").value.trim(), unknowns: lines("ontology-unknowns"), smallest_validation_action: document.getElementById("smallest-validation-action").value.trim() }) });
+            message("Hypothesis recorded. It cannot validate a Need Issue or create a product by itself.");
+            await loadHypotheses();
+        } catch (error) { message(error.message, "error"); }
+    };
+    loadHypotheses();
+</script>
+{% endblock %}
