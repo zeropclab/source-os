@@ -11,6 +11,8 @@ from apps.api.dependencies import get_db
 from apps.api.schemas.need_issue import (
     FeatureDefinitionCreate,
     FeatureDefinitionResponse,
+    NeedChallengeCreate,
+    NeedChallengeResponse,
     NeedEvidenceCreate,
     NeedEvidenceResponse,
     NeedIssueCreate,
@@ -21,6 +23,7 @@ from apps.api.schemas.need_issue import (
 from packages.storage.models.external_signal import ExternalSignal
 from packages.storage.models.need_issue import (
     FeatureDefinition,
+    NeedChallenge,
     NeedEvidence,
     NeedIssue,
     NeedIssueStatusEvent,
@@ -91,6 +94,34 @@ async def _add_evidence(
     return evidence
 
 
+async def _discovery_gate_gaps(db: AsyncSession, need_issue: NeedIssue) -> list[str]:
+    supporting = await db.scalar(
+        select(func.count(NeedEvidence.id)).where(
+            NeedEvidence.need_issue_id == need_issue.id, NeedEvidence.role == "supporting"
+        )
+    )
+    counter = await db.scalar(
+        select(func.count(NeedEvidence.id)).where(
+            NeedEvidence.need_issue_id == need_issue.id, NeedEvidence.role == "counter"
+        )
+    )
+    challenges = await db.scalar(
+        select(func.count(NeedChallenge.id)).where(NeedChallenge.need_issue_id == need_issue.id)
+    )
+    gaps = []
+    if not supporting:
+        gaps.append("supporting evidence")
+    if not counter:
+        gaps.append("counter evidence")
+    if not need_issue.unknowns:
+        gaps.append("unknowns")
+    if not need_issue.next_validation_action.strip():
+        gaps.append("next validation action")
+    if not challenges:
+        gaps.append("challenge")
+    return gaps
+
+
 @router.post("", response_model=NeedIssueResponse, status_code=201)
 async def create_need_issue(body: NeedIssueCreate, db: Annotated[AsyncSession, Depends(get_db)]):
     need_issue = NeedIssue(**body.model_dump())
@@ -120,6 +151,20 @@ async def add_evidence(
     await db.commit()
     await db.refresh(evidence)
     return evidence
+
+
+@router.post("/{need_issue_id}/challenges", response_model=NeedChallengeResponse, status_code=201)
+async def add_challenge(
+    need_issue_id: uuid.UUID,
+    body: NeedChallengeCreate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    await _get_need_issue_or_404(db, need_issue_id)
+    challenge = NeedChallenge(need_issue_id=need_issue_id, **body.model_dump())
+    db.add(challenge)
+    await db.commit()
+    await db.refresh(challenge)
+    return challenge
 
 
 @router.patch("/{need_issue_id}", response_model=NeedIssueResponse)
@@ -216,20 +261,14 @@ async def transition_need_issue(
     if need_issue.status in {"dormant", "rejected"} and body.new_evidence is None:
         raise HTTPException(status_code=422, detail="Reopening requires a new evidence reference")
     if target == "discovery-validated":
-        supporting_count = await db.scalar(
-            select(func.count(NeedEvidence.id)).where(
-                NeedEvidence.need_issue_id == need_issue.id,
-                NeedEvidence.role == "supporting",
-            )
-        )
-        if not supporting_count:
+        gaps = await _discovery_gate_gaps(db, need_issue)
+        if gaps and not body.override_gate:
             raise HTTPException(
                 status_code=409,
-                detail=(
-                    "Need Issue needs at least one supporting evidence reference "
-                    "before discovery validation"
-                ),
+                detail=f"Discovery validation gate is incomplete: {', '.join(gaps)}",
             )
+        if body.override_gate and body.reason is None:
+            raise HTTPException(status_code=422, detail="Gate override requires a recorded reason")
     previous = need_issue.status
     need_issue.status = target
     if body.new_evidence is not None:
@@ -239,7 +278,8 @@ async def transition_need_issue(
             need_issue_id=need_issue.id,
             from_status=previous,
             to_status=target,
-            reason=body.reason or "Status transition",
+            reason=(f"OVERRIDE: {body.reason}" if body.override_gate else body.reason)
+            or "Status transition",
         )
     )
     await db.commit()
