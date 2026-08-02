@@ -16,6 +16,7 @@ from apps.api.schemas.need_issue import (
     NeedEvidenceCreate,
     NeedEvidenceResponse,
     NeedIssueCreate,
+    NeedIssueFromAcceptedSignalCreate,
     NeedIssueResponse,
     NeedIssueTransition,
     NeedIssueUpdate,
@@ -140,6 +141,46 @@ async def create_need_issue(body: NeedIssueCreate, db: Annotated[AsyncSession, D
             version=1,
             snapshot=_snapshot(need_issue),
             change_reason="Initial definition",
+        )
+    )
+    await db.commit()
+    await db.refresh(need_issue)
+    return await _response(need_issue, db)
+
+
+@router.post("/from-accepted-signal", response_model=NeedIssueResponse, status_code=201)
+async def create_need_issue_from_accepted_signal(
+    body: NeedIssueFromAcceptedSignalCreate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    signal = await db.get(ExternalSignal, body.external_signal_id)
+    if signal is None:
+        raise HTTPException(status_code=422, detail="External Signal not found")
+    if signal.status != "accepted":
+        raise HTTPException(
+            status_code=409,
+            detail="External Signal must be accepted before it can seed a Need Issue",
+        )
+
+    need_issue = NeedIssue(**body.model_dump(exclude={"external_signal_id", "excerpt"}))
+    db.add(need_issue)
+    await db.flush()
+    db.add(
+        NeedIssueVersion(
+            need_issue_id=need_issue.id,
+            version=1,
+            snapshot=_snapshot(need_issue),
+            change_reason="Initial definition from accepted external signal",
+        )
+    )
+    db.add(
+        NeedEvidence(
+            need_issue_id=need_issue.id,
+            reference_type="external_signal",
+            reference_uri=signal.source_uri or f"external-signal://{signal.id}",
+            external_signal_id=signal.id,
+            role="supporting",
+            excerpt=body.excerpt or signal.observation,
         )
     )
     await db.commit()

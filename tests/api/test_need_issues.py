@@ -23,6 +23,83 @@ async def test_create_need_issue_as_unvalidated_internal_record(client):
     assert body["id"]
 
 
+async def test_operator_can_create_captured_need_from_accepted_signal_with_provenance(client):
+    signal = await client.post(
+        "/api/external-signals",
+        json={
+            "source_label": "Public discussion",
+            "source_uri": "https://example.com/discussions/needs-42",
+            "original_material": "I export two reports and reconcile them by hand every week.",
+            "observed_at": datetime.now(UTC).isoformat(),
+            "observation": "An operator reports a repeated report-reconciliation workaround.",
+        },
+    )
+    signal_id = signal.json()["id"]
+    await client.post(
+        f"/api/external-signals/{signal_id}/triage",
+        json={"status": "accepted", "reason": "Original material records a concrete workaround."},
+    )
+
+    response = await client.post(
+        "/api/need-issues/from-accepted-signal",
+        json={
+            "external_signal_id": signal_id,
+            "title": "Operators reconcile reports manually",
+            "target_actor": "small business operators",
+            "context": "when closing a weekly reporting cycle",
+            "problem": "they compare separate exports manually to find mismatches",
+            "desired_outcome": "identify mismatches without repeated manual comparison",
+            "unknowns": ["Whether this repeats across independent operators"],
+            "next_validation_action": "collect a counterexample from an automated workflow",
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["status"] == "captured"
+    assert body["evidence_count"] == 1
+    evidence = await client.post(
+        f"/api/need-issues/{body['id']}/evidence",
+        json={
+            "reference_type": "external_signal",
+            "reference_uri": "https://example.com/discussions/needs-42",
+            "external_signal_id": signal_id,
+            "role": "counter",
+            "excerpt": "A counterexample is recorded separately.",
+        },
+    )
+    assert evidence.status_code == 201
+    assert evidence.json()["external_signal_id"] == signal_id
+
+
+async def test_candidate_signal_cannot_seed_a_need_issue_before_operator_acceptance(client):
+    signal = await client.post(
+        "/api/external-signals",
+        json={
+            "source_label": "Unreviewed discussion",
+            "original_material": "A single comment describes a workaround.",
+            "observed_at": datetime.now(UTC).isoformat(),
+            "observation": "The material has not been reviewed by the operator.",
+        },
+    )
+
+    response = await client.post(
+        "/api/need-issues/from-accepted-signal",
+        json={
+            "external_signal_id": signal.json()["id"],
+            "title": "Unreviewed issue",
+            "target_actor": "unknown actor",
+            "context": "unknown context",
+            "problem": "unknown problem",
+            "desired_outcome": "unknown outcome",
+            "next_validation_action": "review the original material",
+        },
+    )
+
+    assert response.status_code == 409
+    assert "must be accepted" in response.json()["detail"]
+
+
 async def test_need_issue_cannot_skip_evidence_gate_before_feature_definition(client):
     created = await client.post(
         "/api/need-issues",

@@ -210,7 +210,11 @@ async function triageSignal(signalId, status) {
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({status, reason})
         });
-        message(`Evidence marked ${status}. The original material and audit trail remain available.`, 'success');
+        if (status === 'accepted') {
+            document.getElementById('workbench-message').innerHTML = `<article class="message-success">Evidence accepted. <a href="/needs/create?signal=${encodeURIComponent(signalId)}">Define a Need Issue from this evidence</a>.</article>`;
+        } else {
+            message(`Evidence marked ${status}. The original material and audit trail remain available.`, 'success');
+        }
         await loadEvidence();
     } catch (error) { message(error.message, 'error'); }
 }

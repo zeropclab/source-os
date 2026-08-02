@@ -33,3 +33,15 @@ async def test_source_creation_page_can_define_a_github_issue_source(client):
     assert '<option value="github">GitHub Issues</option>' in page
     assert "github:'issues'" in page
     assert "github_rest" in page
+
+
+async def test_need_definition_page_requires_an_explicit_accepted_signal_handoff(client):
+    response = await client.get("/needs/create?signal=11111111-1111-1111-1111-111111111111")
+
+    assert response.status_code == 200
+    page = response.text
+    assert 'id="need-from-signal-form"' in page
+    assert 'id="accepted-signal-context"' in page
+    assert "/api/external-signals/${signalId}" in page
+    assert "/api/need-issues/from-accepted-signal" in page
+    assert "This creates a captured Need Issue, not a validated demand" in page
