@@ -1,8 +1,7 @@
 """Runtime-controlled adapter boundary for bounded source-capability probes."""
 
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Literal, Protocol, TypeVar
+from typing import Literal, Protocol
 
 from packages.storage.models.source import Source
 from packages.storage.models.source_config_version import SourceConfigVersion
@@ -28,25 +27,39 @@ class ProbeRequestBudgetExceededError(RuntimeError):
     pass
 
 
-RequestResult = TypeVar("RequestResult")
+@dataclass(frozen=True)
+class ProbeRequest:
+    """One request description; only the runtime-owned transport may execute it."""
+
+    target: str
+
+
+@dataclass(frozen=True)
+class ProbeResponse:
+    payload: dict[str, str]
+
+
+class ProbeTransport(Protocol):
+    async def execute(self, request: ProbeRequest) -> ProbeResponse: ...
 
 
 @dataclass
 class ProbeExecution:
     request_limit: int
     time_limit_seconds: int
+    _transport: ProbeTransport
     _consumed_requests: int = 0
 
     @property
     def consumed_requests(self) -> int:
         return self._consumed_requests
 
-    async def request(self, operation: Callable[[], Awaitable[RequestResult]]) -> RequestResult:
+    async def request(self, request: ProbeRequest) -> ProbeResponse:
         """Run one external request through the runtime-owned budget gate."""
         if self._consumed_requests >= self.request_limit:
             raise ProbeRequestBudgetExceededError
         self._consumed_requests += 1
-        return await operation()
+        return await self._transport.execute(request)
 
 
 class SourceProbeAdapter(Protocol):

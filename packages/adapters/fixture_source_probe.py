@@ -1,7 +1,10 @@
 """Deterministic reference probe adapter with no live network dependency."""
 
 from packages.adapters.source_probe import (
+    AccessState,
     ProbeExecution,
+    ProbeRequest,
+    ProbeResponse,
     ProbeResult,
     UnsupportedSourceProbeAdapter,
 )
@@ -9,8 +12,13 @@ from packages.storage.models.source import Source
 from packages.storage.models.source_config_version import SourceConfigVersion
 
 
-async def _fixture_request() -> None:
-    return None
+class FixtureProbeTransport:
+    """Execute deterministic fixture requests without any network access."""
+
+    async def execute(self, request: ProbeRequest) -> ProbeResponse:
+        if not request.target.startswith("fixture://"):
+            raise ValueError("Fixture transport refuses non-fixture targets")
+        return ProbeResponse(payload={"target": request.target})
 
 
 class FixtureSourceProbeAdapter:
@@ -21,7 +29,7 @@ class FixtureSourceProbeAdapter:
         *,
         execution: ProbeExecution,
     ) -> ProbeResult:
-        await execution.request(_fixture_request)
+        await execution.request(ProbeRequest(target=f"fixture://{source.source_type}"))
         if source.source_type == "accessible_with_context":
             return ProbeResult(
                 status="succeeded",
@@ -56,6 +64,31 @@ class FixtureSourceProbeAdapter:
                     "rate-limited the probe."
                 ],
                 outcome_detail="rate_limited",
+            )
+        access_failures: dict[str, tuple[AccessState, str]] = {
+            "credentialed": (
+                "credentialed",
+                "Credentials are required before source capabilities can be verified.",
+            ),
+            "subscription_gated": (
+                "subscription",
+                "A subscription is required before source capabilities can be verified.",
+            ),
+            "blocked": (
+                "blocked",
+                "The source blocked the probe before capabilities could be verified.",
+            ),
+        }
+        if source.source_type in access_failures:
+            access_state, risk = access_failures[source.source_type]
+            return ProbeResult(
+                status="failed",
+                access_state=access_state,
+                sample=None,
+                pagination_supported=None,
+                replies_supported=None,
+                context_risks=[risk],
+                outcome_detail=source.source_type,
             )
         return await UnsupportedSourceProbeAdapter().probe(
             source,

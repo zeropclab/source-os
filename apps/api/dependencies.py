@@ -1,6 +1,9 @@
 """FastAPI dependency injection."""
 
-from packages.adapters.fixture_source_probe import DispatchingSourceProbeAdapter
+from packages.adapters.fixture_source_probe import (
+    DispatchingSourceProbeAdapter,
+    FixtureProbeTransport,
+)
 from packages.storage.database import async_session
 
 
@@ -16,3 +19,8 @@ async def get_db():
 def get_source_probe_adapter():
     """Return the dispatcher with an explicit deterministic reference adapter."""
     return DispatchingSourceProbeAdapter()
+
+
+def get_source_probe_transport():
+    """Return the no-network transport used by the reference probe adapter."""
+    return FixtureProbeTransport()

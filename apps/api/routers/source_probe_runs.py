@@ -9,13 +9,18 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.api.dependencies import get_db, get_source_probe_adapter
+from apps.api.dependencies import (
+    get_db,
+    get_source_probe_adapter,
+    get_source_probe_transport,
+)
 from apps.api.schemas.source_probe_run import SourceProbeRunCreate, SourceProbeRunResponse
 from packages.adapters.source_probe import (
     AccessState,
     ProbeExecution,
     ProbeRequestBudgetExceededError,
     ProbeResult,
+    ProbeTransport,
     SourceProbeAdapter,
 )
 from packages.storage.models.source import Source
@@ -61,6 +66,7 @@ async def create_source_probe_run(
     body: SourceProbeRunCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
     adapter: Annotated[SourceProbeAdapter, Depends(get_source_probe_adapter)],
+    transport: Annotated[ProbeTransport, Depends(get_source_probe_transport)],
 ):
     config = await db.scalar(
         select(SourceConfigVersion).where(
@@ -91,6 +97,7 @@ async def create_source_probe_run(
     execution = ProbeExecution(
         request_limit=body.request_budget,
         time_limit_seconds=body.time_budget_seconds,
+        _transport=transport,
     )
     started_at = time.monotonic()
     try:
@@ -108,9 +115,20 @@ async def create_source_probe_run(
             context_risk="Probe timed out before source capabilities were verified.",
             outcome_detail="probe_timeout",
         )
-    else:
-        _assert_adapter_contract(result)
+    except Exception as error:
+        result = _failed_probe_result(
+            cast(AccessState, config.access_mode),
+            context_risk="Probe adapter failed before capabilities were verified.",
+            outcome_detail=f"adapter_error:{type(error).__name__}",
+        )
     elapsed_ms = int((time.monotonic() - started_at) * 1000)
+    if elapsed_ms > body.time_budget_seconds * 1000:
+        result = _failed_probe_result(
+            cast(AccessState, config.access_mode),
+            context_risk="Probe timed out before source capabilities were verified.",
+            outcome_detail="probe_timeout",
+        )
+    _assert_adapter_contract(result)
     run = SourceProbeRun(
         source_config_version_id=config.id,
         **body.model_dump(),
