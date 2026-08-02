@@ -370,6 +370,12 @@ async def test_feature_definition_requires_validated_need_and_tracking_plan(clie
     assert body["need_issue_id"] == need_id
     assert body["status"] == "defined"
 
+    delivery_workbench = await client.get(f"/api/delivery-records/features/{body['id']}/workbench")
+    assert delivery_workbench.status_code == 200
+    assert delivery_workbench.json()["feature_definition"]["id"] == body["id"]
+    assert delivery_workbench.json()["deliveries"] == []
+    assert any("record a delivery" in gap for gap in delivery_workbench.json()["gaps"])
+
     delivery = await client.post(
         f"/api/delivery-records/features/{body['id']}/deliveries",
         json={"branch": "feat/confirmation-board", "implementation_version": "v0.1.0"},

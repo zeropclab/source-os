@@ -191,6 +191,25 @@ class OutcomeDecisionCreate(BaseModel):
     rationale: str = Field(min_length=1)
 
 
+class OutcomeDecisionResponse(OutcomeDecisionCreate):
+    id: uuid.UUID
+    delivery_record_id: uuid.UUID
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class DeliveryRecordWorkbenchResponse(DeliveryRecordResponse):
+    outcomes: list[FeatureOutcomeResponse]
+    outcome_decision: OutcomeDecisionResponse | None
+
+
+class FeatureDeliveryWorkbenchResponse(BaseModel):
+    feature_definition: FeatureDefinitionResponse
+    deliveries: list[DeliveryRecordWorkbenchResponse]
+    gaps: list[str]
+
+
 class ValidationExperimentCreate(BaseModel):
     hypothesis: str = Field(min_length=1)
     audience: str = Field(min_length=1)

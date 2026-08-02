@@ -90,3 +90,17 @@ async def test_product_thesis_workbench_exposes_decision_controls(client):
     assert "/api/product-theses/${thesisId}/workbench" in page
     assert "/build-authorization" in page
     assert "not market proof" in page
+
+
+async def test_delivery_workbench_exposes_review_release_tracking_and_outcome_controls(client):
+    response = await client.get("/features/11111111-1111-1111-1111-111111111111/delivery")
+
+    assert response.status_code == 200
+    page = response.text
+    assert 'id="delivery-workbench"' in page
+    assert 'id="delivery-record-form"' in page
+    assert 'id="release-delivery-form"' in page
+    assert 'id="feature-outcome-form"' in page
+    assert 'id="outcome-decision-form"' in page
+    assert "/api/delivery-records/features/${featureId}/workbench" in page
+    assert "not proof of product success" in page
