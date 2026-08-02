@@ -347,3 +347,125 @@ async def test_operator_override_of_an_incomplete_discovery_gate_is_explicitly_a
     assert overridden.status_code == 200
     events = await client.get(f"/api/need-issues/{need_id}/status-events")
     assert events.json()["items"][-1]["reason"].startswith("OVERRIDE: ")
+
+
+async def test_validation_experiment_requires_approval_before_external_work_and_records_reality(
+    client,
+):
+    created = await client.post(
+        "/api/need-issues",
+        json={
+            "title": "Independent translators lose terminology decisions",
+            "target_actor": "independent translators with repeat clients",
+            "context": "when starting a revision for a repeat client",
+            "problem": "approved terminology is scattered across past work",
+            "desired_outcome": "reuse client-approved terms without manual searching",
+            "unknowns": ["Whether they would pay for a terminology workflow"],
+            "next_validation_action": "ask five translators about a paid pilot",
+        },
+    )
+    need_id = created.json()["id"]
+
+    experiment = await client.post(
+        f"/api/need-issues/{need_id}/experiments",
+        json={
+            "hypothesis": (
+                "Repeat-client translators will commit to a paid pilot for term memory."
+            ),
+            "audience": "Independent translators with at least three repeat clients.",
+            "method": "Send five individual pilot invitations with a price quote.",
+            "budget_cents": 3000,
+            "time_limit_hours": 72,
+            "success_threshold": "At least two paid-pilot commitments.",
+            "negative_threshold": "Zero replies after five invitations.",
+            "stop_condition": "Stop after five invitations or 72 hours, whichever comes first.",
+            "requires_external_action": True,
+        },
+    )
+    assert experiment.status_code == 201
+    experiment_id = experiment.json()["id"]
+    assert experiment.json()["status"] == "draft"
+
+    blocked = await client.post(f"/api/experiments/{experiment_id}/start")
+    assert blocked.status_code == 409
+    assert "operator approval" in blocked.json()["detail"]
+
+    approved = await client.post(
+        f"/api/experiments/{experiment_id}/approve",
+        json={"operator_note": "I will personally send only these five invitations."},
+    )
+    assert approved.status_code == 200
+    assert approved.json()["status"] == "approved"
+
+    started = await client.post(f"/api/experiments/{experiment_id}/start")
+    assert started.status_code == 200
+    assert started.json()["status"] == "running"
+
+    refusal = await client.post(
+        f"/api/experiments/{experiment_id}/observations",
+        json={
+            "kind": "refusal",
+            "observation": "Translator says they already use a spreadsheet and will not pay.",
+            "source_uri": "obsidian://validation/translator-1",
+        },
+    )
+    payment = await client.post(
+        f"/api/experiments/{experiment_id}/observations",
+        json={
+            "kind": "payment",
+            "observation": "Translator committed to a paid pilot after seeing the price.",
+            "amount_cents": 1500,
+        },
+    )
+    assert refusal.status_code == 201
+    assert payment.status_code == 201
+    assert payment.json()["kind"] == "payment"
+
+    decided = await client.post(
+        f"/api/experiments/{experiment_id}/decision",
+        json={
+            "decision": "change",
+            "rationale": (
+                "One payment supports willingness to pay, but the refusal narrows the audience."
+            ),
+        },
+    )
+    assert decided.status_code == 200
+    assert decided.json()["status"] == "decided"
+    assert decided.json()["decision"] == "change"
+
+
+async def test_validation_experiment_cannot_close_without_market_observation(client):
+    created = await client.post(
+        "/api/need-issues",
+        json={
+            "title": "A concrete claim still needs a market test",
+            "target_actor": "a defined operator group",
+            "context": "during a repeat workflow",
+            "problem": "a manual workaround consumes time",
+            "desired_outcome": "test whether a buyer values a replacement",
+            "unknowns": ["Whether anyone will commit"],
+            "next_validation_action": "run one bounded offer test",
+        },
+    )
+    experiment = await client.post(
+        f"/api/need-issues/{created.json()['id']}/experiments",
+        json={
+            "hypothesis": "A defined buyer will take a concrete next step.",
+            "audience": "A defined buyer segment.",
+            "method": "Run one bounded offer test.",
+            "budget_cents": 0,
+            "time_limit_hours": 24,
+            "success_threshold": "One concrete next step.",
+            "negative_threshold": "No concrete next step.",
+            "stop_condition": "Stop after one day.",
+            "requires_external_action": False,
+        },
+    )
+
+    decision = await client.post(
+        f"/api/experiments/{experiment.json()['id']}/decision",
+        json={"decision": "stop", "rationale": "No conclusion without an observation."},
+    )
+    assert decision.status_code == 409
+    assert "at least one market observation" in decision.json()["detail"]

@@ -19,6 +19,8 @@ from apps.api.schemas.need_issue import (
     NeedIssueResponse,
     NeedIssueTransition,
     NeedIssueUpdate,
+    ValidationExperimentCreate,
+    ValidationExperimentResponse,
 )
 from packages.storage.models.external_signal import ExternalSignal
 from packages.storage.models.need_issue import (
@@ -28,6 +30,7 @@ from packages.storage.models.need_issue import (
     NeedIssue,
     NeedIssueStatusEvent,
     NeedIssueVersion,
+    ValidationExperiment,
 )
 
 router = APIRouter()
@@ -165,6 +168,22 @@ async def add_challenge(
     await db.commit()
     await db.refresh(challenge)
     return challenge
+
+
+@router.post(
+    "/{need_issue_id}/experiments", response_model=ValidationExperimentResponse, status_code=201
+)
+async def create_validation_experiment(
+    need_issue_id: uuid.UUID,
+    body: ValidationExperimentCreate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    need_issue = await _get_need_issue_or_404(db, need_issue_id)
+    experiment = ValidationExperiment(need_issue_id=need_issue.id, **body.model_dump())
+    db.add(experiment)
+    await db.commit()
+    await db.refresh(experiment)
+    return experiment
 
 
 @router.patch("/{need_issue_id}", response_model=NeedIssueResponse)

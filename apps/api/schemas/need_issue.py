@@ -110,6 +110,55 @@ class FeatureDefinitionResponse(FeatureDefinitionCreate):
     model_config = {"from_attributes": True}
 
 
+class ValidationExperimentCreate(BaseModel):
+    hypothesis: str = Field(min_length=1)
+    audience: str = Field(min_length=1)
+    method: str = Field(min_length=1)
+    budget_cents: int = Field(ge=0)
+    time_limit_hours: int = Field(gt=0)
+    success_threshold: str = Field(min_length=1)
+    negative_threshold: str = Field(min_length=1)
+    stop_condition: str = Field(min_length=1)
+    requires_external_action: bool = True
+
+
+class ValidationExperimentResponse(ValidationExperimentCreate):
+    id: uuid.UUID
+    need_issue_id: uuid.UUID
+    status: str
+    approval_note: str | None
+    decision: str | None
+    decision_rationale: str | None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ExperimentApproval(BaseModel):
+    operator_note: str = Field(min_length=1)
+
+
+class MarketObservationCreate(BaseModel):
+    kind: Literal["response", "refusal", "silence", "trial", "payment", "refund", "cost"]
+    observation: str = Field(min_length=1)
+    source_uri: str | None = None
+    amount_cents: int | None = Field(default=None, ge=0)
+
+
+class MarketObservationResponse(MarketObservationCreate):
+    id: uuid.UUID
+    experiment_id: uuid.UUID
+    observed_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ExperimentDecision(BaseModel):
+    decision: Literal["continue", "change", "stop"]
+    rationale: str = Field(min_length=1)
+
+
 class NeedIssueResponse(BaseModel):
     id: uuid.UUID
     title: str

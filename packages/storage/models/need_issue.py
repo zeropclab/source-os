@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -35,6 +35,9 @@ class NeedIssue(Base):
     )
     features = relationship(
         "FeatureDefinition", back_populates="need_issue", cascade="all, delete-orphan"
+    )
+    experiments = relationship(
+        "ValidationExperiment", back_populates="need_issue", cascade="all, delete-orphan"
     )
 
 
@@ -99,6 +102,57 @@ class NeedChallenge(Base):
     smallest_next_action: Mapped[str] = mapped_column(Text, nullable=False)
     assessment: Mapped[str] = mapped_column(String(32), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ValidationExperiment(Base):
+    __tablename__ = "validation_experiments"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    need_issue_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("need_issues.id", ondelete="CASCADE"), nullable=False
+    )
+    hypothesis: Mapped[str] = mapped_column(Text, nullable=False)
+    audience: Mapped[str] = mapped_column(Text, nullable=False)
+    method: Mapped[str] = mapped_column(Text, nullable=False)
+    budget_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    time_limit_hours: Mapped[int] = mapped_column(Integer, nullable=False)
+    success_threshold: Mapped[str] = mapped_column(Text, nullable=False)
+    negative_threshold: Mapped[str] = mapped_column(Text, nullable=False)
+    stop_condition: Mapped[str] = mapped_column(Text, nullable=False)
+    requires_external_action: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="draft")
+    approval_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    decision: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    decision_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    need_issue = relationship("NeedIssue", back_populates="experiments")
+    observations = relationship(
+        "MarketObservation", back_populates="experiment", cascade="all, delete-orphan"
+    )
+
+
+class MarketObservation(Base):
+    __tablename__ = "market_observations"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    experiment_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("validation_experiments.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    observation: Mapped[str] = mapped_column(Text, nullable=False)
+    source_uri: Mapped[str | None] = mapped_column(Text, nullable=True)
+    amount_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    observed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    experiment = relationship("ValidationExperiment", back_populates="observations")
 
 
 class FeatureDefinition(Base):
