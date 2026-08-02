@@ -46,6 +46,47 @@ async def test_operator_can_retrieve_a_need_issue_definition_and_evidence_count(
     assert response.json()["evidence_count"] == 0
 
 
+async def test_operator_can_reopen_and_filter_the_persisted_need_library(client):
+    first = await client.post(
+        "/api/need-issues",
+        json={
+            "title": "Independent operators lose incident context",
+            "target_actor": "independent operators",
+            "context": "when investigating a production incident",
+            "problem": "incident context is scattered across tools",
+            "desired_outcome": "recover the relevant context without repeated searching",
+            "next_validation_action": (
+                "record one counterexample from an operator with a stable process"
+            ),
+        },
+    )
+    second = await client.post(
+        "/api/need-issues",
+        json={
+            "title": "Consultants repeat client intake questions",
+            "target_actor": "independent consultants",
+            "context": "when starting recurring engagements",
+            "problem": "client intake context is recreated each time",
+            "desired_outcome": "reuse confirmed intake context",
+            "next_validation_action": "review a recent intake transcript for a counterexample",
+        },
+    )
+    all_needs = await client.get("/api/need-issues?page=1&page_size=20")
+    captured = await client.get("/api/need-issues?status=captured&page=1&page_size=20")
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert all_needs.status_code == 200
+    assert all_needs.json()["total"] == 2
+    assert {item["id"] for item in all_needs.json()["items"]} == {
+        first.json()["id"],
+        second.json()["id"],
+    }
+    assert captured.status_code == 200
+    assert captured.json()["total"] == 2
+    assert all(item["status"] == "captured" for item in captured.json()["items"])
+
+
 async def test_operator_can_retrieve_a_draft_experiment_for_decision_work(client):
     need = await client.post(
         "/api/need-issues",

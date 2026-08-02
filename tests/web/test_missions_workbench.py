@@ -95,6 +95,18 @@ async def test_need_definition_page_requires_an_explicit_accepted_signal_handoff
     assert "This creates a captured Need Issue, not a validated demand" in page
 
 
+async def test_need_library_lists_persisted_problem_hypotheses_without_claiming_validation(client):
+    response = await client.get("/needs")
+
+    assert response.status_code == 200
+    page = response.text
+    assert 'id="need-library"' in page
+    assert 'id="need-status-filter"' in page
+    assert "/api/need-issues?page=1&page_size=100" in page
+    assert "Evidence counts describe stored references only" in page
+    assert "Open validation workbench" in page
+
+
 async def test_need_validation_workbench_exposes_counterevidence_challenge_and_experiment_forms(
     client,
 ):
