@@ -79,6 +79,63 @@ async def _create_github_mission(
     return mission_response.json(), config
 
 
+async def test_queued_mission_run_is_controlled_before_any_collection(client):
+    """A workbench operator can control a pinned run before it touches a source."""
+    mission, _ = await _create_github_mission(client)
+
+    queued = await client.post(
+        f"/api/acquisition-missions/{mission['id']}/queued-runs",
+        json={"execution_mode": "fixture"},
+    )
+
+    assert queued.status_code == 201
+    run = queued.json()
+    assert run["lifecycle_status"] == "queued"
+    assert run["terminal_state"] == "not_started"
+    assert run["raw_artifacts"] == []
+    assert run["external_signal_ids"] == []
+    assert run["network_requests"] == 0
+
+    paused = await client.post(f"/api/acquisition-mission-runs/{run['id']}/pause")
+    assert paused.status_code == 200
+    assert paused.json()["lifecycle_status"] == "paused"
+
+    resumed = await client.post(f"/api/acquisition-mission-runs/{run['id']}/resume")
+    assert resumed.status_code == 200
+    assert resumed.json()["lifecycle_status"] == "queued"
+
+    cancelled = await client.post(f"/api/acquisition-mission-runs/{run['id']}/cancel")
+    assert cancelled.status_code == 200
+    assert cancelled.json()["lifecycle_status"] == "cancelled"
+    assert cancelled.json()["terminal_state"] == "cancelled"
+
+    history = await client.get(f"/api/acquisition-missions/{mission['id']}/runs")
+    assert history.status_code == 200
+    assert history.json()["items"][0]["lifecycle_status"] == "cancelled"
+
+
+async def test_queued_mission_run_collects_only_after_explicit_execute(client):
+    mission, _ = await _create_github_mission(client)
+    app.dependency_overrides[get_github_mission_transport] = lambda: GitHubFixtureTransport(
+        scenario="issue_with_context"
+    )
+    queued = await client.post(
+        f"/api/acquisition-missions/{mission['id']}/queued-runs",
+        json={"execution_mode": "fixture"},
+    )
+    assert queued.status_code == 201
+
+    executed = await client.post(f"/api/acquisition-mission-runs/{queued.json()['id']}/execute")
+
+    assert executed.status_code == 200
+    run = executed.json()
+    assert run["lifecycle_status"] == "completed"
+    assert run["terminal_state"] == "succeeded"
+    assert run["raw_artifacts"]
+    assert run["external_signal_ids"]
+    assert "run:started" in run["checkpoints"]
+
+
 async def test_fixture_github_mission_preserves_raw_context_and_creates_traceable_signals(client):
     mission, config = await _create_github_mission(client)
     app.dependency_overrides[get_github_mission_transport] = lambda: GitHubFixtureTransport(

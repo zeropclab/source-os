@@ -46,6 +46,10 @@ class AcquisitionMissionRun(Base):
         nullable=True,
     )
     execution_mode: Mapped[str] = mapped_column(String(24), nullable=False)
+    lifecycle_status: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="completed", server_default="completed"
+    )
+    control_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     input_snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False)
     budgets: Mapped[dict] = mapped_column(JSONB, nullable=False)
     raw_artifacts: Mapped[list[dict]] = mapped_column(JSONB, nullable=False)
@@ -61,6 +65,4 @@ class AcquisitionMissionRun(Base):
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    completed_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)

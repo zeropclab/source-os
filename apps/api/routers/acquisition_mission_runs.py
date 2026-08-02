@@ -19,6 +19,7 @@ from apps.api.dependencies import (
 from apps.api.schemas.acquisition_mission import AcquisitionMissionResponse
 from apps.api.schemas.acquisition_mission_run import (
     AcquisitionMissionDryRunCreate,
+    AcquisitionMissionRunControl,
     AcquisitionMissionRunCreate,
     AcquisitionMissionRunListResponse,
     AcquisitionMissionRunResponse,
@@ -132,6 +133,44 @@ async def _persist_signal_drafts(
     )
 
 
+def _queued_run(
+    mission: AcquisitionMission, source: Source, execution_mode: str
+) -> AcquisitionMissionRun:
+    config = mission.source_config_version
+    return AcquisitionMissionRun(
+        mission_id=mission.id,
+        source_config_version_id=config.id,
+        replay_of_run_id=None,
+        execution_mode=execution_mode,
+        lifecycle_status="queued",
+        input_snapshot=_input_snapshot(mission, source),
+        budgets={
+            "request_limit": config.request_policy["request_limit"],
+            "time_limit_seconds": config.request_policy["timeout_seconds"],
+            "item_limit": mission.item_limit,
+            "cost_budget_cents": mission.cost_budget_cents,
+        },
+        raw_artifacts=[],
+        parser_version=(
+            f"{config.extraction_settings['parser']}:{config.extraction_settings['parser_version']}"
+        ),
+        context_completeness={
+            "issue": False,
+            "comments": False,
+            "parent_context": False,
+            "pagination_complete": False,
+            "missing": ["not_collected"],
+        },
+        checkpoints=["run:queued"],
+        retry_count=0,
+        terminal_state="not_started",
+        failure_detail=None,
+        transport_requests=0,
+        network_requests=0,
+        external_signal_ids=[],
+    )
+
+
 def _failed_timeout_result(timeout_seconds: int) -> GitHubMissionResult:
     return GitHubMissionResult(
         raw_artifacts=[],
@@ -148,6 +187,28 @@ def _failed_timeout_result(timeout_seconds: int) -> GitHubMissionResult:
         terminal_state="failed",
         failure_detail=(f"Mission exceeded its {timeout_seconds} second time budget."),
     )
+
+
+@router.post(
+    "/{mission_id}/queued-runs",
+    response_model=AcquisitionMissionRunResponse,
+    status_code=201,
+)
+async def queue_acquisition_mission_run(
+    mission_id: uuid.UUID,
+    body: AcquisitionMissionRunCreate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Persist a pinned run plan without calling a source or creating evidence."""
+    mission = await _get_mission_or_404(db, mission_id)
+    source = await db.get(Source, mission.source_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Source not found")
+    run = _queued_run(mission, source, body.execution_mode)
+    db.add(run)
+    await db.commit()
+    await db.refresh(run)
+    return run
 
 
 @router.post(
@@ -201,6 +262,7 @@ async def create_acquisition_mission_dry_run(
         source_config_version_id=config.id,
         replay_of_run_id=None,
         execution_mode=f"dry_run:{body.execution_mode}",
+        lifecycle_status="completed",
         input_snapshot=_input_snapshot(mission, source),
         budgets={
             "request_limit": body.preview_request_limit,
@@ -223,6 +285,7 @@ async def create_acquisition_mission_dry_run(
         transport_requests=bounded_transport.transport_requests,
         network_requests=bounded_transport.network_requests,
         external_signal_ids=[],
+        completed_at=func.now(),
     )
     db.add(run)
     await db.commit()
@@ -268,6 +331,7 @@ async def create_acquisition_mission_run(
         source_config_version_id=config.id,
         replay_of_run_id=None,
         execution_mode=body.execution_mode,
+        lifecycle_status="completed",
         input_snapshot=_input_snapshot(mission, source),
         budgets={
             "request_limit": config.request_policy["request_limit"],
@@ -287,6 +351,7 @@ async def create_acquisition_mission_run(
         transport_requests=bounded_transport.transport_requests,
         network_requests=bounded_transport.network_requests,
         external_signal_ids=[],
+        completed_at=func.now(),
     )
     db.add(run)
     await db.flush()
@@ -360,6 +425,7 @@ async def replay_acquisition_mission_run(
         source_config_version_id=original.source_config_version_id,
         replay_of_run_id=original.id,
         execution_mode="fixture_replay",
+        lifecycle_status="completed",
         input_snapshot=copy.deepcopy(original.input_snapshot),
         budgets=copy.deepcopy(original.budgets),
         raw_artifacts=copy.deepcopy(original.raw_artifacts),
@@ -376,6 +442,7 @@ async def replay_acquisition_mission_run(
         transport_requests=0,
         network_requests=0,
         external_signal_ids=[],
+        completed_at=func.now(),
     )
     db.add(replay)
     await db.flush()
@@ -384,6 +451,119 @@ async def replay_acquisition_mission_run(
     await db.commit()
     await db.refresh(replay)
     return replay
+
+
+async def _control_queued_run(
+    run_id: uuid.UUID,
+    expected_status: str,
+    next_status: str,
+    body: AcquisitionMissionRunControl,
+    db: AsyncSession,
+) -> AcquisitionMissionRun:
+    run = await db.get(AcquisitionMissionRun, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Acquisition Mission run not found")
+    if run.lifecycle_status != expected_status:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Run is {run.lifecycle_status}; expected {expected_status} for this control",
+        )
+    run.lifecycle_status = next_status
+    run.control_reason = body.reason
+    run.checkpoints = [*run.checkpoints, f"run:{next_status}"]
+    if next_status == "cancelled":
+        run.terminal_state = "cancelled"
+        run.completed_at = func.now()
+    await db.commit()
+    await db.refresh(run)
+    return run
+
+
+@read_router.post("/{run_id}/pause", response_model=AcquisitionMissionRunResponse)
+async def pause_acquisition_mission_run(
+    run_id: uuid.UUID,
+    body: AcquisitionMissionRunControl | None = None,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+):
+    return await _control_queued_run(
+        run_id, "queued", "paused", body or AcquisitionMissionRunControl(), db
+    )
+
+
+@read_router.post("/{run_id}/resume", response_model=AcquisitionMissionRunResponse)
+async def resume_acquisition_mission_run(
+    run_id: uuid.UUID,
+    body: AcquisitionMissionRunControl | None = None,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+):
+    return await _control_queued_run(
+        run_id, "paused", "queued", body or AcquisitionMissionRunControl(), db
+    )
+
+
+@read_router.post("/{run_id}/cancel", response_model=AcquisitionMissionRunResponse)
+async def cancel_acquisition_mission_run(
+    run_id: uuid.UUID,
+    body: AcquisitionMissionRunControl | None = None,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+):
+    return await _control_queued_run(
+        run_id, "queued", "cancelled", body or AcquisitionMissionRunControl(), db
+    )
+
+
+@read_router.post("/{run_id}/execute", response_model=AcquisitionMissionRunResponse)
+async def execute_queued_acquisition_mission_run(
+    run_id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    fixture_transport: Annotated[GitHubMissionTransport, Depends(get_github_mission_transport)],
+    live_transport: Annotated[GitHubMissionTransport, Depends(get_github_live_transport)],
+):
+    """Explicitly execute one queued, pinned run from the workbench."""
+    run = await db.get(AcquisitionMissionRun, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Acquisition Mission run not found")
+    if run.lifecycle_status != "queued":
+        raise HTTPException(
+            status_code=409, detail=f"Run is {run.lifecycle_status}; expected queued"
+        )
+
+    mission = await _get_mission_or_404(db, run.mission_id)
+    source = await db.get(Source, mission.source_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Source not found")
+    config = mission.source_config_version
+    run.lifecycle_status = "running"
+    run.checkpoints = [*run.checkpoints, "run:started"]
+    await db.commit()
+
+    selected_transport = live_transport if run.execution_mode == "live" else fixture_transport
+    bounded_transport = BoundedGitHubMissionTransport(
+        selected_transport, request_limit=config.request_policy["request_limit"]
+    )
+    timeout_seconds = config.request_policy["timeout_seconds"]
+    try:
+        async with asyncio.timeout(timeout_seconds):
+            result = await GitHubMissionAdapter().collect(
+                source.url, config, bounded_transport, item_limit=mission.item_limit
+            )
+    except TimeoutError:
+        result = _failed_timeout_result(timeout_seconds)
+
+    run.raw_artifacts = result.raw_artifacts
+    run.context_completeness = result.context_completeness.as_dict()
+    run.checkpoints = [*run.checkpoints, *result.checkpoints]
+    run.retry_count = result.retry_count
+    run.terminal_state = result.terminal_state
+    run.failure_detail = result.failure_detail
+    run.transport_requests = bounded_transport.transport_requests
+    run.network_requests = bounded_transport.network_requests
+    run.lifecycle_status = "completed"
+    run.completed_at = func.now()
+    await _persist_signal_drafts(db, run, result.signals)
+    await db.commit()
+    await db.refresh(run)
+    return run
 
 
 @read_router.get("/{run_id}", response_model=AcquisitionMissionRunResponse)

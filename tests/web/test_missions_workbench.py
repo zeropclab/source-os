@@ -13,6 +13,7 @@ async def test_missions_workbench_exposes_an_explicit_bounded_mission_flow(clien
     assert 'id="preview-item-limit"' in page
     assert 'id="preview-request-limit"' in page
     assert 'id="preview-mission"' in page
+    assert 'id="queue-mission"' in page
     assert 'value="fixture"' in page
     assert 'value="live"' in page
     assert 'id="mission-result"' in page
@@ -21,6 +22,8 @@ async def test_missions_workbench_exposes_an_explicit_bounded_mission_flow(clien
     assert 'id="evidence-inbox"' in page
     assert "/api/acquisition-missions" in page
     assert "/dry-runs" in page
+    assert "/queued-runs" in page
+    assert "/execute" in page
     assert "/api/evidence-inbox" in page
     assert "/api/acquisition-missions/${missionId}/runs" in page
     assert "function openHistoricalMission" in page
