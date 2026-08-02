@@ -2,7 +2,17 @@
 
 from fastapi import FastAPI
 
-from .routers import agents, dashboard, items, jobs, missions, needs, ontology, portfolio
+from .routers import (
+    agents,
+    dashboard,
+    items,
+    jobs,
+    missions,
+    needs,
+    observations,
+    ontology,
+    portfolio,
+)
 from .routers import sources as web_sources
 
 web_app = FastAPI(title="SourceOS Console")
@@ -10,6 +20,7 @@ web_app = FastAPI(title="SourceOS Console")
 web_app.include_router(dashboard.router)
 web_app.include_router(web_sources.router)
 web_app.include_router(missions.router)
+web_app.include_router(observations.router)
 web_app.include_router(agents.router)
 web_app.include_router(ontology.router)
 web_app.include_router(portfolio.router)
