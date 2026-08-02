@@ -16,24 +16,33 @@ from apps.api.schemas.need_issue import (
     NeedIssueCreate,
     NeedIssueResponse,
     NeedIssueTransition,
+    NeedIssueUpdate,
 )
-from packages.storage.models.need_issue import FeatureDefinition, NeedEvidence, NeedIssue
+from packages.storage.models.external_signal import ExternalSignal
+from packages.storage.models.need_issue import (
+    FeatureDefinition,
+    NeedEvidence,
+    NeedIssue,
+    NeedIssueStatusEvent,
+    NeedIssueVersion,
+)
 
 router = APIRouter()
 
 _ALLOWED_TRANSITIONS = {
-    "captured": {"triaged", "evidence-backed", "discovery-validated", "rejected"},
-    "triaged": {"captured", "evidence-backed", "discovery-validated", "rejected"},
-    "evidence-backed": {"triaged", "discovery-validated", "rejected"},
-    "discovery-validated": {"feature-defined", "rejected"},
-    "feature-defined": {"in-development", "rejected"},
-    "in-development": {"review-ready", "rejected"},
-    "review-ready": {"merged", "in-development", "rejected"},
-    "merged": {"released", "rejected"},
-    "released": {"measured", "rejected"},
-    "measured": {"retained", "rejected"},
-    "retained": set(),
-    "rejected": set(),
+    "captured": {"triaged", "evidence-backed", "discovery-validated", "rejected", "dormant"},
+    "triaged": {"captured", "evidence-backed", "discovery-validated", "rejected", "dormant"},
+    "evidence-backed": {"triaged", "discovery-validated", "rejected", "dormant"},
+    "discovery-validated": {"feature-defined", "rejected", "dormant"},
+    "feature-defined": {"in-development", "rejected", "dormant"},
+    "in-development": {"review-ready", "rejected", "dormant"},
+    "review-ready": {"merged", "in-development", "rejected", "dormant"},
+    "merged": {"released", "rejected", "dormant"},
+    "released": {"measured", "rejected", "dormant"},
+    "measured": {"retained", "rejected", "dormant"},
+    "retained": {"dormant"},
+    "dormant": {"captured", "triaged", "evidence-backed"},
+    "rejected": {"captured"},
 }
 
 
@@ -53,10 +62,48 @@ async def _response(need_issue: NeedIssue, db: AsyncSession) -> NeedIssueRespons
     return response.model_copy(update={"evidence_count": evidence_count or 0})
 
 
+def _snapshot(need_issue: NeedIssue) -> dict:
+    return {
+        field: getattr(need_issue, field)
+        for field in (
+            "title",
+            "target_actor",
+            "context",
+            "problem",
+            "desired_outcome",
+            "workaround",
+            "counterevidence_summary",
+            "unknowns",
+            "next_validation_action",
+        )
+    }
+
+
+async def _add_evidence(
+    db: AsyncSession, need_issue_id: uuid.UUID, body: NeedEvidenceCreate
+) -> NeedEvidence:
+    if body.external_signal_id is not None:
+        signal = await db.get(ExternalSignal, body.external_signal_id)
+        if signal is None:
+            raise HTTPException(status_code=422, detail="External Signal not found")
+    evidence = NeedEvidence(need_issue_id=need_issue_id, **body.model_dump())
+    db.add(evidence)
+    return evidence
+
+
 @router.post("", response_model=NeedIssueResponse, status_code=201)
 async def create_need_issue(body: NeedIssueCreate, db: Annotated[AsyncSession, Depends(get_db)]):
     need_issue = NeedIssue(**body.model_dump())
     db.add(need_issue)
+    await db.flush()
+    db.add(
+        NeedIssueVersion(
+            need_issue_id=need_issue.id,
+            version=1,
+            snapshot=_snapshot(need_issue),
+            change_reason="Initial definition",
+        )
+    )
     await db.commit()
     await db.refresh(need_issue)
     return await _response(need_issue, db)
@@ -69,11 +116,82 @@ async def add_evidence(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     await _get_need_issue_or_404(db, need_issue_id)
-    evidence = NeedEvidence(need_issue_id=need_issue_id, **body.model_dump())
-    db.add(evidence)
+    evidence = await _add_evidence(db, need_issue_id, body)
     await db.commit()
     await db.refresh(evidence)
     return evidence
+
+
+@router.patch("/{need_issue_id}", response_model=NeedIssueResponse)
+async def update_need_issue(
+    need_issue_id: uuid.UUID,
+    body: NeedIssueUpdate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    need_issue = await _get_need_issue_or_404(db, need_issue_id)
+    changes = body.model_dump(exclude={"change_reason"}, exclude_unset=True)
+    if not changes:
+        raise HTTPException(status_code=422, detail="At least one definition field must change")
+    for field, value in changes.items():
+        setattr(need_issue, field, value)
+    need_issue.definition_version += 1
+    db.add(
+        NeedIssueVersion(
+            need_issue_id=need_issue.id,
+            version=need_issue.definition_version,
+            snapshot=_snapshot(need_issue),
+            change_reason=body.change_reason,
+        )
+    )
+    await db.commit()
+    await db.refresh(need_issue)
+    return await _response(need_issue, db)
+
+
+@router.get("/{need_issue_id}/versions")
+async def list_need_issue_versions(
+    need_issue_id: uuid.UUID, db: Annotated[AsyncSession, Depends(get_db)]
+):
+    await _get_need_issue_or_404(db, need_issue_id)
+    versions = await db.scalars(
+        select(NeedIssueVersion)
+        .where(NeedIssueVersion.need_issue_id == need_issue_id)
+        .order_by(NeedIssueVersion.version)
+    )
+    return {
+        "items": [
+            {
+                "version": item.version,
+                "snapshot": item.snapshot,
+                "change_reason": item.change_reason,
+                "created_at": item.created_at,
+            }
+            for item in versions
+        ]
+    }
+
+
+@router.get("/{need_issue_id}/status-events")
+async def list_need_issue_status_events(
+    need_issue_id: uuid.UUID, db: Annotated[AsyncSession, Depends(get_db)]
+):
+    await _get_need_issue_or_404(db, need_issue_id)
+    events = await db.scalars(
+        select(NeedIssueStatusEvent)
+        .where(NeedIssueStatusEvent.need_issue_id == need_issue_id)
+        .order_by(NeedIssueStatusEvent.created_at)
+    )
+    return {
+        "items": [
+            {
+                "from_status": item.from_status,
+                "to_status": item.to_status,
+                "reason": item.reason,
+                "created_at": item.created_at,
+            }
+            for item in events
+        ]
+    }
 
 
 @router.post("/{need_issue_id}/transition", response_model=NeedIssueResponse)
@@ -89,6 +207,14 @@ async def transition_need_issue(
             status_code=409,
             detail=f"Need Issue must be discovery-validated before it can become {target}",
         )
+    requires_reason = target in {"dormant", "rejected"} or need_issue.status in {
+        "dormant",
+        "rejected",
+    }
+    if requires_reason and body.reason is None:
+        raise HTTPException(status_code=422, detail="This status change requires a recorded reason")
+    if need_issue.status in {"dormant", "rejected"} and body.new_evidence is None:
+        raise HTTPException(status_code=422, detail="Reopening requires a new evidence reference")
     if target == "discovery-validated":
         supporting_count = await db.scalar(
             select(func.count(NeedEvidence.id)).where(
@@ -104,7 +230,18 @@ async def transition_need_issue(
                     "before discovery validation"
                 ),
             )
+    previous = need_issue.status
     need_issue.status = target
+    if body.new_evidence is not None:
+        await _add_evidence(db, need_issue.id, body.new_evidence)
+    db.add(
+        NeedIssueStatusEvent(
+            need_issue_id=need_issue.id,
+            from_status=previous,
+            to_status=target,
+            reason=body.reason or "Status transition",
+        )
+    )
     await db.commit()
     await db.refresh(need_issue)
     return await _response(need_issue, db)

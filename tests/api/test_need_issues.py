@@ -1,5 +1,7 @@
 """Tests for the evidence-backed Need Issue workflow."""
 
+from datetime import UTC, datetime
+
 
 async def test_create_need_issue_as_unvalidated_internal_record(client):
     response = await client.post(
@@ -98,3 +100,134 @@ async def test_feature_definition_requires_validated_need_and_tracking_plan(clie
     body = feature.json()
     assert body["need_issue_id"] == need_id
     assert body["status"] == "defined"
+
+
+async def test_need_issue_preserves_signal_provenance_counterevidence_and_definition_history(
+    client,
+):
+    signal = await client.post(
+        "/api/external-signals",
+        json={
+            "source_label": "Public discussion",
+            "source_uri": "https://example.com/discussions/42",
+            "original_material": "I export two reports and reconcile them by hand.",
+            "observed_at": datetime.now(UTC).isoformat(),
+            "observation": "The operator reports a repeated manual reconciliation workaround.",
+        },
+    )
+    assert signal.status_code == 201
+
+    created = await client.post(
+        "/api/need-issues",
+        json={
+            "title": "Operators reconcile reports manually",
+            "target_actor": "small business operators",
+            "context": "when closing a monthly reporting cycle",
+            "problem": "they compare exports manually to find mismatches",
+            "desired_outcome": "identify mismatches without repeated manual comparison",
+            "workaround": "export both reports and compare rows manually",
+            "unknowns": ["Whether this happens across independent businesses"],
+            "next_validation_action": "collect a counterexample from a business using automation",
+        },
+    )
+    assert created.status_code == 201
+    need_id = created.json()["id"]
+
+    supporting = await client.post(
+        f"/api/need-issues/{need_id}/evidence",
+        json={
+            "reference_type": "external_signal",
+            "reference_uri": "https://example.com/discussions/42",
+            "external_signal_id": signal.json()["id"],
+            "role": "supporting",
+            "excerpt": "I export two reports and reconcile them by hand.",
+        },
+    )
+    counter = await client.post(
+        f"/api/need-issues/{need_id}/evidence",
+        json={
+            "reference_type": "interview_note",
+            "reference_uri": "obsidian://counterexample/1",
+            "role": "counter",
+            "excerpt": "Our accounting software reconciles this automatically.",
+        },
+    )
+    assert supporting.status_code == 201
+    assert supporting.json()["external_signal_id"] == signal.json()["id"]
+    assert counter.status_code == 201
+
+    updated = await client.patch(
+        f"/api/need-issues/{need_id}",
+        json={
+            "problem": "they repeatedly compare exports manually to locate mismatches",
+            "change_reason": "Original wording did not preserve the repeated behavior.",
+        },
+    )
+    assert updated.status_code == 200
+    assert updated.json()["definition_version"] == 2
+
+    versions = await client.get(f"/api/need-issues/{need_id}/versions")
+    assert versions.status_code == 200
+    assert [version["version"] for version in versions.json()["items"]] == [1, 2]
+    assert versions.json()["items"][1]["change_reason"] == (
+        "Original wording did not preserve the repeated behavior."
+    )
+
+
+async def test_need_issue_requires_reason_and_new_evidence_to_reopen_from_dormant_or_rejected(
+    client,
+):
+    created = await client.post(
+        "/api/need-issues",
+        json={
+            "title": "Dispatchers lose handoff context",
+            "target_actor": "dispatchers",
+            "context": "when a shift changes",
+            "problem": "handoff notes live in disconnected channels",
+            "desired_outcome": "start a shift with the current operational context",
+            "unknowns": ["Whether this delays incidents"],
+            "next_validation_action": "observe one live shift handoff",
+        },
+    )
+    need_id = created.json()["id"]
+
+    missing_reason = await client.post(
+        f"/api/need-issues/{need_id}/transition", json={"status": "dormant"}
+    )
+    assert missing_reason.status_code == 422
+
+    dormant = await client.post(
+        f"/api/need-issues/{need_id}/transition",
+        json={"status": "dormant", "reason": "No reachable operators this month."},
+    )
+    assert dormant.status_code == 200
+    assert dormant.json()["status"] == "dormant"
+
+    missing_new_evidence = await client.post(
+        f"/api/need-issues/{need_id}/transition",
+        json={"status": "captured", "reason": "A new contact is available."},
+    )
+    assert missing_new_evidence.status_code == 422
+
+    reopened = await client.post(
+        f"/api/need-issues/{need_id}/transition",
+        json={
+            "status": "captured",
+            "reason": "A new contact is available.",
+            "new_evidence": {
+                "reference_type": "interview_note",
+                "reference_uri": "obsidian://interview/dispatch-1",
+                "role": "supporting",
+                "excerpt": "The incoming dispatcher asks the same questions every shift.",
+            },
+        },
+    )
+    assert reopened.status_code == 200
+    assert reopened.json()["status"] == "captured"
+
+    events = await client.get(f"/api/need-issues/{need_id}/status-events")
+    assert events.status_code == 200
+    assert [event["reason"] for event in events.json()["items"]] == [
+        "No reachable operators this month.",
+        "A new contact is available.",
+    ]

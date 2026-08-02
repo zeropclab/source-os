@@ -18,6 +18,7 @@ NeedStatus = Literal[
     "released",
     "measured",
     "retained",
+    "dormant",
     "rejected",
 ]
 
@@ -30,18 +31,35 @@ class NeedIssueCreate(BaseModel):
     desired_outcome: str = Field(min_length=1)
     workaround: str | None = None
     counterevidence_summary: str | None = None
+    unknowns: list[str] = Field(default_factory=list)
     next_validation_action: str = Field(min_length=1)
-
-
-class NeedIssueTransition(BaseModel):
-    status: NeedStatus
 
 
 class NeedEvidenceCreate(BaseModel):
     reference_type: str = Field(min_length=1, max_length=32)
     reference_uri: str = Field(min_length=1)
+    external_signal_id: uuid.UUID | None = None
     role: Literal["supporting", "counter"]
     excerpt: str | None = None
+
+
+class NeedIssueTransition(BaseModel):
+    status: NeedStatus
+    reason: str | None = Field(default=None, min_length=1)
+    new_evidence: NeedEvidenceCreate | None = None
+
+
+class NeedIssueUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    target_actor: str | None = Field(default=None, min_length=1)
+    context: str | None = Field(default=None, min_length=1)
+    problem: str | None = Field(default=None, min_length=1)
+    desired_outcome: str | None = Field(default=None, min_length=1)
+    workaround: str | None = None
+    counterevidence_summary: str | None = None
+    unknowns: list[str] | None = None
+    next_validation_action: str | None = Field(default=None, min_length=1)
+    change_reason: str = Field(min_length=1)
 
 
 class NeedEvidenceResponse(NeedEvidenceCreate):
@@ -82,8 +100,10 @@ class NeedIssueResponse(BaseModel):
     desired_outcome: str
     workaround: str | None
     counterevidence_summary: str | None
+    unknowns: list[str]
     next_validation_action: str
     status: str
+    definition_version: int
     evidence_count: int = 0
     created_at: datetime
     updated_at: datetime
