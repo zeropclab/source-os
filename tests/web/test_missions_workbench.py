@@ -24,6 +24,8 @@ async def test_missions_workbench_exposes_an_explicit_bounded_mission_flow(clien
     assert "/dry-runs" in page
     assert "/queued-runs" in page
     assert "/execute" in page
+    assert "/retry" in page
+    assert "Retry as new run" in page
     assert "/api/evidence-inbox" in page
     assert "/api/acquisition-missions/${missionId}/runs" in page
     assert "function openHistoricalMission" in page

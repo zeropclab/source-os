@@ -189,7 +189,7 @@ function renderRun(run) {
     const context = run.context_completeness || {};
     const gap = (context.missing || []).join(', ') || 'none reported';
     const previewNotice = run.budgets?.preview ? '<p><strong>Preview only:</strong> no candidate evidence was created. Inspect this bounded sample and its context gaps before explicitly running the mission.</p>' : '';
-    const controls = run.lifecycle_status === 'queued' ? `<div class="triage-actions"><button type="button" onclick="executeQueuedRun('${run.id}')">Schedule for worker</button><button type="button" class="secondary" onclick="controlQueuedRun('${run.id}', 'pause')">Pause</button><button type="button" class="contrast outline" onclick="controlQueuedRun('${run.id}', 'cancel')">Cancel</button></div>` : run.lifecycle_status === 'scheduled' ? `<div class="triage-actions"><button type="button" class="secondary" onclick="controlQueuedRun('${run.id}', 'pause')">Pause before claim</button><button type="button" class="contrast outline" onclick="controlQueuedRun('${run.id}', 'cancel')">Cancel</button></div>` : run.lifecycle_status === 'paused' ? `<div class="triage-actions"><button type="button" onclick="controlQueuedRun('${run.id}', 'resume')">Resume to queue</button></div>` : '';
+    const controls = run.lifecycle_status === 'queued' ? `<div class="triage-actions"><button type="button" onclick="executeQueuedRun('${run.id}')">Schedule for worker</button><button type="button" class="secondary" onclick="controlQueuedRun('${run.id}', 'pause')">Pause</button><button type="button" class="contrast outline" onclick="controlQueuedRun('${run.id}', 'cancel')">Cancel</button></div>` : run.lifecycle_status === 'scheduled' ? `<div class="triage-actions"><button type="button" class="secondary" onclick="controlQueuedRun('${run.id}', 'pause')">Pause before claim</button><button type="button" class="contrast outline" onclick="controlQueuedRun('${run.id}', 'cancel')">Cancel</button></div>` : run.lifecycle_status === 'paused' ? `<div class="triage-actions"><button type="button" onclick="controlQueuedRun('${run.id}', 'resume')">Resume to queue</button></div>` : run.lifecycle_status === 'completed' && run.terminal_state === 'failed' ? `<div class="triage-actions"><button type="button" onclick="retryFailedRun('${run.id}')">Retry as new run</button></div>` : '';
     const lease = run.lease_expires_at ? ` until ${escapeHtml(run.lease_expires_at)}` : '';
     document.getElementById('mission-result').innerHTML = `<article><p class="eyebrow">Mission run · ${escapeHtml(run.execution_mode)}</p><h2>${escapeHtml(run.lifecycle_status)} · ${escapeHtml(run.terminal_state)}</h2><div class="run-metrics"><span>Worker attempts <strong>${run.execution_attempt}</strong></span><span>Lease <strong>${lease || 'not held'}</strong></span><span>Transport requests <strong>${run.transport_requests}</strong></span><span>Network requests <strong>${run.network_requests}</strong></span><span>Retries <strong>${run.retry_count}</strong></span><span>Raw artifacts <strong>${run.raw_artifacts.length}</strong></span><span>Evidence candidates <strong>${run.external_signal_ids.length}</strong></span></div>${previewNotice}<p><strong>Context gaps:</strong> ${escapeHtml(gap)}</p><p><strong>Checkpoints:</strong> ${escapeHtml((run.checkpoints || []).join(' · '))}</p>${controls}${run.failure_detail ? `<p class="failure-detail"><strong>Failure detail:</strong> ${escapeHtml(run.failure_detail)}</p>` : ''}</article>`;
 }
@@ -239,6 +239,15 @@ async function executeQueuedRun(runId) {
         renderRun(run);
         message('Mission is scheduled for a worker. No source has been contacted by the web request.', 'success');
         pollScheduledRun(run.id);
+    } catch (error) { message(error.message, 'error'); }
+}
+
+async function retryFailedRun(runId) {
+    try {
+        const run = await request(`/api/acquisition-mission-runs/${runId}/retry`, { method: 'POST' });
+        state.run = run;
+        renderRun(run);
+        message('A new queued run preserves the failed run for audit. Schedule it when ready.', 'success');
     } catch (error) { message(error.message, 'error'); }
 }
 
