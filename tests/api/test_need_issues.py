@@ -46,6 +46,36 @@ async def test_operator_can_retrieve_a_need_issue_definition_and_evidence_count(
     assert response.json()["evidence_count"] == 0
 
 
+async def test_operator_can_retrieve_a_draft_experiment_for_decision_work(client):
+    need = await client.post(
+        "/api/need-issues",
+        json={
+            "title": "T",
+            "target_actor": "A",
+            "context": "C",
+            "problem": "P",
+            "desired_outcome": "O",
+            "next_validation_action": "N",
+        },
+    )
+    experiment = await client.post(
+        f"/api/need-issues/{need.json()['id']}/experiments",
+        json={
+            "hypothesis": "H",
+            "audience": "A",
+            "method": "M",
+            "budget_cents": 0,
+            "time_limit_hours": 1,
+            "success_threshold": "S",
+            "negative_threshold": "N",
+            "stop_condition": "Stop",
+        },
+    )
+    response = await client.get(f"/api/experiments/{experiment.json()['id']}")
+    assert response.status_code == 200
+    assert response.json()["status"] == "draft"
+
+
 async def test_operator_can_create_captured_need_from_accepted_signal_with_provenance(client):
     signal = await client.post(
         "/api/external-signals",

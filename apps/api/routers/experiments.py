@@ -27,6 +27,11 @@ async def _experiment_or_404(db: AsyncSession, experiment_id: uuid.UUID) -> Vali
     return experiment
 
 
+@router.get("/{experiment_id}", response_model=ValidationExperimentResponse)
+async def get_experiment(experiment_id: uuid.UUID, db: Annotated[AsyncSession, Depends(get_db)]):
+    return await _experiment_or_404(db, experiment_id)
+
+
 @router.post("/{experiment_id}/approve", response_model=ValidationExperimentResponse)
 async def approve_experiment(
     experiment_id: uuid.UUID,
