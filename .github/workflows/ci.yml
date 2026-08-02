@@ -67,7 +67,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.18.1"
+          cache: npm
+          cache-dependency-path: agent-runtime/package-lock.json
       - run: pip install -e ".[dev]"
+      - run: |
+          npm --prefix agent-runtime ci
+          npm --prefix agent-runtime run build
       - run: alembic upgrade head
         env:
           DATABASE_URL: postgresql+asyncpg://runner:test@localhost:5432/sourceos_test

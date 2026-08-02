@@ -1,6 +1,5 @@
 """FastAPI application config loaded from environment variables."""
 
-import os
 from pydantic_settings import BaseSettings
 
 
@@ -15,6 +14,10 @@ class Settings(BaseSettings):
     api_port: int = 8000
     web_username: str = "admin"
     web_password: str = "sourceos"
+    pi_provider: str = ""
+    pi_model: str = ""
+    pi_runtime_command: str = "node agent-runtime/dist/main.js"
+    pi_runtime_timeout_seconds: int = 60
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

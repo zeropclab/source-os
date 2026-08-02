@@ -11,6 +11,11 @@ const start = {
   type: "start",
   payload: {
     evidence_bundle_hash: "abc",
+    task_instruction: "Draft a proposal only.",
+    citations: ["signal-1"],
+    evidence_bundle: [{ signal_id: "signal-1", observation: "Manual workaround." }],
+    provider: "faux",
+    model: "sourceos-proposal-faux-v1",
     budget: { max_tool_calls: 2, max_tokens: 100, max_cost_cents: 1 },
   },
 };

@@ -32,7 +32,7 @@ async def test_agent_run_is_bounded_auditable_and_only_returns_a_cited_proposal(
         "evidence_signal_ids": [supporting, counter],
         "task_instruction": "Draft one falsifiable need hypothesis from this bounded evidence.",
         "idempotency_key": "reconciliation-bundle-v1",
-        "model_version": "deterministic-fake-v1",
+        "model_version": "pi-faux-v1",
         "prompt_version": "need-proposal-v1",
         "max_tool_calls": 2,
         "max_tokens": 500,
@@ -48,17 +48,17 @@ async def test_agent_run_is_bounded_auditable_and_only_returns_a_cited_proposal(
     assert duplicate.json()["id"] == run["id"]
     assert run["status"] == "created"
     assert run["evidence_bundle_hash"]
-    assert run["tool_allowlist"] == ["retrieve_evidence", "find_counterevidence"]
+    assert run["tool_allowlist"] == []
 
     completed = await client.post(f"/api/agent-runs/{run['id']}/execute")
     assert completed.status_code == 200
     output = completed.json()["output"]
     assert completed.json()["status"] == "completed"
-    assert completed.json()["usage"]["tool_calls"] <= 2
-    assert completed.json()["usage"]["cost_cents"] <= 5
-    assert output["kind"] == "need_issue_proposal"
+    assert completed.json()["usage"]["tool_calls"] == 0
+    assert completed.json()["usage"]["tokens"] >= 0
+    assert completed.json()["usage"]["cost_cents"] == 0
+    assert output["provider"] == "faux"
     assert set(output["citations"]) == {supporting, counter}
-    assert output["proposed_status"] == "captured"
     assert output["cannot_conclude"]
     assert completed.json()["operator_changes"] == []
 
@@ -86,7 +86,7 @@ async def test_cancelled_agent_run_never_executes_or_creates_a_business_effect(c
             "evidence_signal_ids": [signal_id],
             "task_instruction": "Find a competing explanation before proposing any need.",
             "idempotency_key": "cancel-before-execute-v1",
-            "model_version": "deterministic-fake-v1",
+            "model_version": "pi-faux-v1",
             "prompt_version": "need-proposal-v1",
             "max_tool_calls": 1,
             "max_tokens": 200,
@@ -103,3 +103,31 @@ async def test_cancelled_agent_run_never_executes_or_creates_a_business_effect(c
     assert cancelled.json()["output"] is None
     assert execution.status_code == 409
     assert execution.json()["detail"] == "Cancelled Agent Run cannot execute"
+
+
+async def test_unconfigured_real_provider_records_auditable_failure(client):
+    signal_id = await _signal(
+        client,
+        "I pay someone to reconcile two data exports every week.",
+        "A recurring paid workaround was reported.",
+    )
+    created = await client.post(
+        "/api/agent-runs",
+        json={
+            "evidence_signal_ids": [signal_id],
+            "task_instruction": "Propose only; do not validate the need.",
+            "idempotency_key": "unconfigured-real-provider-v1",
+            "model_version": "openai/gpt-5-mini",
+            "prompt_version": "need-proposal-v1",
+            "max_tool_calls": 1,
+            "max_tokens": 200,
+            "max_cost_cents": 2,
+        },
+    )
+    execution = await client.post(f"/api/agent-runs/{created.json()['id']}/execute")
+
+    assert execution.status_code == 200
+    assert execution.json()["status"] == "failed"
+    assert execution.json()["output"] is None
+    assert execution.json()["errors"][0]["stage"] == "runtime"
+    assert "not configured" in execution.json()["errors"][0]["error"]
