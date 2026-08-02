@@ -184,6 +184,52 @@ async def test_live_mode_uses_the_public_transport_and_records_network_requests(
     assert run["network_requests"] == 2
 
 
+async def test_dry_run_previews_a_bounded_sample_without_creating_evidence_candidates(client):
+    mission, _ = await _create_github_mission(client, request_limit=3, item_limit=20)
+    app.dependency_overrides[get_github_mission_transport] = lambda: GitHubFixtureTransport(
+        scenario="issue_with_context"
+    )
+
+    preview = await client.post(
+        f"/api/acquisition-missions/{mission['id']}/dry-runs",
+        json={"execution_mode": "fixture", "preview_item_limit": 1, "preview_request_limit": 2},
+    )
+
+    assert preview.status_code == 201
+    run = preview.json()
+    assert run["execution_mode"] == "dry_run:fixture"
+    assert run["budgets"] == {
+        "request_limit": 2,
+        "time_limit_seconds": 10,
+        "item_limit": 1,
+        "cost_budget_cents": 0,
+        "preview": True,
+        "estimated_cost_cents": None,
+        "estimated_cost_state": "unknown",
+    }
+    assert run["terminal_state"] == "partial"
+    assert run["transport_requests"] == 2
+    assert run["network_requests"] == 0
+    assert run["raw_artifacts"]
+    assert run["external_signal_ids"] == []
+
+    inbox = await client.get("/api/evidence-inbox")
+    assert inbox.status_code == 200
+    assert inbox.json()["items"] == []
+
+
+async def test_dry_run_rejects_preview_budget_that_exceeds_the_pinned_mission_budget(client):
+    mission, _ = await _create_github_mission(client, request_limit=2, item_limit=3)
+
+    preview = await client.post(
+        f"/api/acquisition-missions/{mission['id']}/dry-runs",
+        json={"execution_mode": "fixture", "preview_item_limit": 4, "preview_request_limit": 3},
+    )
+
+    assert preview.status_code == 422
+    assert "cannot exceed" in preview.json()["detail"]
+
+
 async def test_live_issue_without_comments_remains_real_evidence_without_invented_claims(client):
     class NoCommentsTransport:
         transport_requests = 0

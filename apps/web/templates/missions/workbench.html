@@ -81,7 +81,7 @@ workaround</textarea></label>
 </article>
 
 <article id="execution-panel" hidden>
-    <header><strong>4. Execute explicitly</strong></header>
+    <header><strong>4. Preview, then execute explicitly</strong></header>
     <div class="grid">
         <label>Execution mode
             <select id="execution-mode">
@@ -91,7 +91,15 @@ workaround</textarea></label>
         </label>
         <div class="execution-warning"><strong>Live is never automatic.</strong><br><small>Select it deliberately; the pinned request limit and timeout still apply.</small></div>
     </div>
-    <button id="run-mission" type="button">Run selected mode</button>
+    <div class="grid">
+        <label>Preview item limit<input id="preview-item-limit" type="number" min="1" value="1" required></label>
+        <label>Preview request limit<input id="preview-request-limit" type="number" min="1" value="2" required></label>
+    </div>
+    <p><small>A preview saves a traceable run and context risk, but never sends candidate material to Evidence Inbox. A truncated preview is shown as partial, not successful proof.</small></p>
+    <div class="triage-actions">
+        <button id="preview-mission" type="button" class="secondary">Preview bounded sample</button>
+        <button id="run-mission" type="button">Run selected mode</button>
+    </div>
 </article>
 
 <section id="mission-result" aria-live="polite">
@@ -174,8 +182,25 @@ document.getElementById('mission-form').addEventListener('submit', async (event)
 function renderRun(run) {
     const context = run.context_completeness || {};
     const gap = (context.missing || []).join(', ') || 'none reported';
-    document.getElementById('mission-result').innerHTML = `<article><p class="eyebrow">Mission run · ${escapeHtml(run.execution_mode)}</p><h2>${escapeHtml(run.terminal_state)}</h2><div class="run-metrics"><span>Transport requests <strong>${run.transport_requests}</strong></span><span>Network requests <strong>${run.network_requests}</strong></span><span>Retries <strong>${run.retry_count}</strong></span><span>Raw artifacts <strong>${run.raw_artifacts.length}</strong></span><span>Evidence candidates <strong>${run.external_signal_ids.length}</strong></span></div><p><strong>Context gaps:</strong> ${escapeHtml(gap)}</p><p><strong>Checkpoints:</strong> ${escapeHtml((run.checkpoints || []).join(' · '))}</p>${run.failure_detail ? `<p class="failure-detail"><strong>Failure detail:</strong> ${escapeHtml(run.failure_detail)}</p>` : ''}</article>`;
+    const previewNotice = run.budgets?.preview ? '<p><strong>Preview only:</strong> no candidate evidence was created. Inspect this bounded sample and its context gaps before explicitly running the mission.</p>' : '';
+    document.getElementById('mission-result').innerHTML = `<article><p class="eyebrow">Mission run · ${escapeHtml(run.execution_mode)}</p><h2>${escapeHtml(run.terminal_state)}</h2><div class="run-metrics"><span>Transport requests <strong>${run.transport_requests}</strong></span><span>Network requests <strong>${run.network_requests}</strong></span><span>Retries <strong>${run.retry_count}</strong></span><span>Raw artifacts <strong>${run.raw_artifacts.length}</strong></span><span>Evidence candidates <strong>${run.external_signal_ids.length}</strong></span></div>${previewNotice}<p><strong>Context gaps:</strong> ${escapeHtml(gap)}</p><p><strong>Checkpoints:</strong> ${escapeHtml((run.checkpoints || []).join(' · '))}</p>${run.failure_detail ? `<p class="failure-detail"><strong>Failure detail:</strong> ${escapeHtml(run.failure_detail)}</p>` : ''}</article>`;
 }
+
+document.getElementById('preview-mission').addEventListener('click', async () => {
+    if (!state.mission) return;
+    const button = document.getElementById('preview-mission');
+    try {
+        button.disabled = true;
+        const run = await request(`/api/acquisition-missions/${state.mission.id}/dry-runs`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
+            execution_mode: document.getElementById('execution-mode').value,
+            preview_item_limit: Number(document.getElementById('preview-item-limit').value),
+            preview_request_limit: Number(document.getElementById('preview-request-limit').value)
+        }) });
+        renderRun(run);
+        message(`Preview finished with terminal state: ${run.terminal_state}. No evidence candidate was created.`, run.terminal_state === 'failed' ? 'error' : 'success');
+    } catch (error) { message(error.message, 'error'); }
+    finally { button.disabled = false; }
+});
 
 document.getElementById('run-mission').addEventListener('click', async () => {
     if (!state.mission) return;

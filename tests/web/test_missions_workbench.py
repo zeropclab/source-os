@@ -10,11 +10,15 @@ async def test_missions_workbench_exposes_an_explicit_bounded_mission_flow(clien
     assert 'id="source-id"' in page
     assert 'id="source-config-form"' in page
     assert 'id="execution-mode"' in page
+    assert 'id="preview-item-limit"' in page
+    assert 'id="preview-request-limit"' in page
+    assert 'id="preview-mission"' in page
     assert 'value="fixture"' in page
     assert 'value="live"' in page
     assert 'id="mission-result"' in page
     assert 'id="evidence-inbox"' in page
     assert "/api/acquisition-missions" in page
+    assert "/dry-runs" in page
     assert "/api/evidence-inbox" in page
     assert "function triageSignal" in page
     assert "Accept as evidence" in page
@@ -23,6 +27,7 @@ async def test_missions_workbench_exposes_an_explicit_bounded_mission_flow(clien
     assert "/api/external-signals/${signalId}/triage" in page
     assert '["succeeded", "completed"].includes(run.terminal_state)' in page
     assert "context.missing || []" in page
+    assert "Preview only" in page
 
 
 async def test_dashboard_prioritizes_reality_action_and_objection_over_volume_metrics(client):
