@@ -58,6 +58,9 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
+      - run: alembic upgrade head
+        env:
+          DATABASE_URL: postgresql+asyncpg://runner:test@localhost:5432/sourceos_test
       - run: pytest -v
         env:
           DATABASE_URL: postgresql+asyncpg://runner:test@localhost:5432/sourceos_test
