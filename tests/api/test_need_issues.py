@@ -109,6 +109,30 @@ async def test_product_thesis_is_rejected_until_need_issue_is_discovery_validate
     assert "discovery-validated" in response.json()["detail"]
 
 
+async def test_need_issue_asset_ledger_exposes_empty_data_gaps_without_inference(client):
+    need = await client.post(
+        "/api/need-issues",
+        json={
+            "title": "Asset ledger test",
+            "target_actor": "operator",
+            "context": "during a test",
+            "problem": "data is fragmented",
+            "desired_outcome": "see linked assets",
+            "next_validation_action": "add a first evidence record",
+        },
+    )
+
+    response = await client.get(f"/api/need-issues/{need.json()['id']}/asset-ledger")
+
+    assert response.status_code == 200
+    assert response.json()["need_issue_id"] == need.json()["id"]
+    assert response.json()["evidence"] == []
+    assert response.json()["challenges"] == []
+    assert response.json()["experiments"] == []
+    assert response.json()["product_theses"] == []
+    assert "supporting evidence" in response.json()["gaps"]
+
+
 async def test_operator_can_create_captured_need_from_accepted_signal_with_provenance(client):
     signal = await client.post(
         "/api/external-signals",
