@@ -6,10 +6,12 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, StringConstraints
 
+from apps.api.schemas.source_config_version import SourceConfigVersionResponse
+
 StopCondition = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
 
-class AcquisitionMissionCreate(BaseModel):
+class AcquisitionMissionFields(BaseModel):
     reality_question: str = Field(min_length=1)
     mission_type: Literal["exploratory", "targeted_evidence", "counterevidence", "context_repair"]
     source_id: uuid.UUID
@@ -23,8 +25,14 @@ class AcquisitionMissionCreate(BaseModel):
     stop_conditions: list[StopCondition] = Field(min_length=1)
 
 
-class AcquisitionMissionResponse(AcquisitionMissionCreate):
+class AcquisitionMissionCreate(AcquisitionMissionFields):
+    source_config_version_id: uuid.UUID
+
+
+class AcquisitionMissionResponse(AcquisitionMissionFields):
     id: uuid.UUID
+    source_config_version_id: uuid.UUID | None
+    source_config_version: SourceConfigVersionResponse | None
     status: str
     created_at: datetime
     updated_at: datetime
