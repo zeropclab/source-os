@@ -2,7 +2,8 @@
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
-from ..main import templates
+
+from ..templating import templates
 
 router = APIRouter(prefix="/sources", tags=["Web Sources"])
 
@@ -19,4 +20,8 @@ async def source_create_form(request: Request):
 
 @router.get("/{source_id}", response_class=HTMLResponse)
 async def source_detail(request: Request, source_id: str):
-    return templates.TemplateResponse(request, "sources/detail.html", {"source_id": source_id, "title": "Source Detail"})
+    return templates.TemplateResponse(
+        request,
+        "sources/detail.html",
+        {"source_id": source_id, "title": "Source Detail"},
+    )

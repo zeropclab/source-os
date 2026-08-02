@@ -2,7 +2,8 @@
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
-from ..main import templates
+
+from ..templating import templates
 
 router = APIRouter(tags=["Web Dashboard"])
 

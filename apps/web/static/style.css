@@ -33,3 +33,17 @@
 }
 .markdown-body img { max-width: 100%; }
 .markdown-body pre { overflow-x: auto; }
+
+.workbench-heading, .section-heading { display: flex; align-items: start; justify-content: space-between; gap: 1rem; }
+.workbench-heading > div, .section-heading > div { max-width: 48rem; }
+.workbench-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); gap: 1rem; }
+.eyebrow { margin-bottom: .25rem; color: var(--pico-primary); font-size: .75rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.config-status { margin: 1rem 0 0; font-size: .9rem; }
+.execution-warning { align-self: end; padding: .85rem 1rem; border-left: 3px solid var(--pico-color-amber-400); background: var(--pico-card-background-color); }
+.message-error { border-left: 4px solid var(--pico-color-red-400); }
+.message-success { border-left: 4px solid var(--pico-color-green-400); }
+.run-metrics { display: flex; flex-wrap: wrap; gap: .75rem 1.25rem; margin: 1rem 0; }
+.run-metrics span { font-size: .9rem; }
+.failure-detail { color: var(--pico-color-red-400); }
+.evidence-list { display: grid; gap: .75rem; }
+@media (max-width: 600px) { .workbench-heading, .section-heading { flex-direction: column; } }
