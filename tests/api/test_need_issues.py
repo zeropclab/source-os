@@ -76,6 +76,39 @@ async def test_operator_can_retrieve_a_draft_experiment_for_decision_work(client
     assert response.json()["status"] == "draft"
 
 
+async def test_product_thesis_is_rejected_until_need_issue_is_discovery_validated(client):
+    need = await client.post(
+        "/api/need-issues",
+        json={
+            "title": "T",
+            "target_actor": "A",
+            "context": "C",
+            "problem": "P",
+            "desired_outcome": "O",
+            "next_validation_action": "N",
+        },
+    )
+    response = await client.post(
+        f"/api/need-issues/{need.json()['id']}/product-theses",
+        json={
+            "title": "Offer",
+            "user": "U",
+            "beneficiary": "B",
+            "decision_maker": "D",
+            "payer": "P",
+            "trigger": "T",
+            "promised_outcome": "O",
+            "alternative": "A",
+            "channel": "C",
+            "price_cents": 100,
+            "delivery_mechanism": "manual",
+            "delivery_mode": "manual",
+        },
+    )
+    assert response.status_code == 409
+    assert "discovery-validated" in response.json()["detail"]
+
+
 async def test_operator_can_create_captured_need_from_accepted_signal_with_provenance(client):
     signal = await client.post(
         "/api/external-signals",
