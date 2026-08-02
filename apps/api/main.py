@@ -1,14 +1,16 @@
 """FastAPI application entrypoint."""
 
-import structlog
 from contextlib import asynccontextmanager
+
+import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from .config import settings
-from .routers import health, sources, items, jobs, export
 from apps.web.main import web_app
+
+from .config import settings
+from .routers import export, health, items, jobs, need_issues, sources
 
 logger = structlog.get_logger()
 
@@ -41,6 +43,7 @@ app.include_router(sources.router, prefix="/api/sources", tags=["Sources"])
 app.include_router(items.router, prefix="/api/items", tags=["Items"])
 app.include_router(jobs.router, prefix="/api/jobs", tags=["Jobs"])
 app.include_router(export.router, prefix="/api/export", tags=["Export"])
+app.include_router(need_issues.router, prefix="/api/need-issues", tags=["Need Issues"])
 
 # Static files and Web UI
 app.mount("/static", StaticFiles(directory="apps/web/static"), name="static")
