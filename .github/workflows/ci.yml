@@ -17,7 +17,17 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.18.1"
+          cache: npm
+          cache-dependency-path: agent-runtime/package-lock.json
       - run: pip install -e ".[dev]"
+      - name: Check Pi runtime protocol
+        run: |
+          npm --prefix agent-runtime ci
+          npm --prefix agent-runtime run typecheck
+          npm --prefix agent-runtime test
       - name: Report existing repository lint debt (non-blocking during ratchet)
         run: ruff check . --output-format concise || true
       - name: Check changed Python files
