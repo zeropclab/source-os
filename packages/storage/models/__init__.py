@@ -8,6 +8,7 @@ from .external_signal import ExternalSignal, SignalTriageEvent
 from .fetch_job import FetchJob
 from .media_asset import MediaAsset
 from .need_issue import (
+    BuildAuthorization,
     FeatureDefinition,
     MarketObservation,
     NeedChallenge,
@@ -48,5 +49,6 @@ __all__ = [
     "ProductThesis",
     "ProductThesisObservation",
     "FeatureDefinition",
+    "BuildAuthorization",
     "SignalTriageEvent",
 ]

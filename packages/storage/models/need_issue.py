@@ -189,6 +189,12 @@ class ProductThesis(Base):
     observations = relationship(
         "ProductThesisObservation", back_populates="product_thesis", cascade="all, delete-orphan"
     )
+    build_authorization = relationship(
+        "BuildAuthorization",
+        back_populates="product_thesis",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
 
 
 class ProductThesisObservation(Base):
@@ -207,6 +213,22 @@ class ProductThesisObservation(Base):
     product_thesis = relationship("ProductThesis", back_populates="observations")
 
 
+class BuildAuthorization(Base):
+    __tablename__ = "build_authorizations"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    product_thesis_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("product_theses.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+    )
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    product_thesis = relationship("ProductThesis", back_populates="build_authorization")
+
+
 class FeatureDefinition(Base):
     __tablename__ = "feature_definitions"
 
@@ -214,14 +236,19 @@ class FeatureDefinition(Base):
     need_issue_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("need_issues.id", ondelete="CASCADE"), nullable=False
     )
+    product_thesis_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("product_theses.id", ondelete="RESTRICT"), nullable=False
+    )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     user_task: Mapped[str] = mapped_column(Text, nullable=False)
     scope: Mapped[str] = mapped_column(Text, nullable=False)
+    explicit_exclusions: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
     acceptance_criteria: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
     tracking_events: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
     tracking_properties: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
     success_metric: Mapped[str] = mapped_column(Text, nullable=False)
     negative_metric: Mapped[str] = mapped_column(Text, nullable=False)
+    rollback_condition: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="defined")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

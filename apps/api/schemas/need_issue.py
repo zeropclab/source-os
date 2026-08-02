@@ -90,14 +90,17 @@ class NeedEvidenceResponse(NeedEvidenceCreate):
 
 
 class FeatureDefinitionCreate(BaseModel):
+    product_thesis_id: uuid.UUID
     title: str = Field(min_length=1, max_length=255)
     user_task: str = Field(min_length=1)
     scope: str = Field(min_length=1)
+    explicit_exclusions: list[str] = Field(min_length=1)
     acceptance_criteria: list[str] = Field(min_length=1)
     tracking_events: list[str] = Field(min_length=1)
     tracking_properties: list[str] = Field(min_length=1)
     success_metric: str = Field(min_length=1)
     negative_metric: str = Field(min_length=1)
+    rollback_condition: str = Field(min_length=1)
 
 
 class FeatureDefinitionResponse(FeatureDefinitionCreate):
@@ -106,6 +109,18 @@ class FeatureDefinitionResponse(FeatureDefinitionCreate):
     status: str
     created_at: datetime
     updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class BuildAuthorizationCreate(BaseModel):
+    rationale: str = Field(min_length=1)
+
+
+class BuildAuthorizationResponse(BuildAuthorizationCreate):
+    id: uuid.UUID
+    product_thesis_id: uuid.UUID
+    created_at: datetime
 
     model_config = {"from_attributes": True}
 

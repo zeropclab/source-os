@@ -9,12 +9,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.dependencies import get_db
 from apps.api.schemas.need_issue import (
+    BuildAuthorizationCreate,
+    BuildAuthorizationResponse,
     ProductThesisDecision,
     ProductThesisObservationCreate,
     ProductThesisObservationResponse,
     ProductThesisResponse,
 )
-from packages.storage.models.need_issue import ProductThesis, ProductThesisObservation
+from packages.storage.models.need_issue import (
+    BuildAuthorization,
+    ProductThesis,
+    ProductThesisObservation,
+)
 
 router = APIRouter()
 
@@ -44,6 +50,34 @@ async def record_observation(
     await db.commit()
     await db.refresh(observation)
     return observation
+
+
+@router.post(
+    "/{thesis_id}/build-authorization", response_model=BuildAuthorizationResponse, status_code=201
+)
+async def authorize_build(
+    thesis_id: uuid.UUID,
+    body: BuildAuthorizationCreate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    thesis = await _thesis_or_404(db, thesis_id)
+    if thesis.status != "decided" or thesis.decision != "continue":
+        raise HTTPException(
+            status_code=409,
+            detail="A build authorization requires a continuing Product Thesis decision",
+        )
+    existing = await db.scalar(
+        select(BuildAuthorization).where(BuildAuthorization.product_thesis_id == thesis.id)
+    )
+    if existing is not None:
+        raise HTTPException(
+            status_code=409, detail="This Product Thesis already has a build authorization"
+        )
+    authorization = BuildAuthorization(product_thesis_id=thesis.id, rationale=body.rationale)
+    db.add(authorization)
+    await db.commit()
+    await db.refresh(authorization)
+    return authorization
 
 
 @router.post("/{thesis_id}/decision", response_model=ProductThesisResponse)

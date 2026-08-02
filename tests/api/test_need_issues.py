@@ -100,12 +100,64 @@ async def test_feature_definition_requires_validated_need_and_tracking_plan(clie
     )
     assert validated.status_code == 200
 
+    thesis = await client.post(
+        f"/api/need-issues/{need_id}/product-theses",
+        json={
+            "title": "Clinic follow-up concierge pilot",
+            "user": "clinic coordinator",
+            "beneficiary": "clinic coordinator",
+            "decision_maker": "clinic owner",
+            "payer": "clinic owner",
+            "trigger": "an appointment remains unconfirmed",
+            "promised_outcome": "identify follow-up work quickly",
+            "alternative": "manual calls and messages",
+            "channel": "direct pilot outreach",
+            "price_cents": 1000,
+            "delivery_mechanism": "manual status-board setup",
+            "delivery_mode": "manual",
+        },
+    )
+    thesis_id = thesis.json()["id"]
+    blocked_feature = await client.post(
+        f"/api/need-issues/{need_id}/features",
+        json={
+            "product_thesis_id": thesis_id,
+            "title": "Premature feature",
+            "user_task": "Do one bounded task",
+            "scope": "One narrow workflow",
+            "explicit_exclusions": ["No automation"],
+            "acceptance_criteria": ["Completes the bounded task"],
+            "tracking_events": ["feature_viewed"],
+            "tracking_properties": ["thesis_id"],
+            "success_metric": "One completed task",
+            "negative_metric": "No completed tasks",
+            "rollback_condition": "Remove the feature if it blocks the task.",
+        },
+    )
+    assert blocked_feature.status_code == 409
+    assert "build authorization" in blocked_feature.json()["detail"]
+    await client.post(
+        f"/api/product-theses/{thesis_id}/observations",
+        json={"kind": "quote", "observation": "A pilot quote was prepared.", "amount_cents": 1000},
+    )
+    await client.post(
+        f"/api/product-theses/{thesis_id}/decision",
+        json={"decision": "continue", "rationale": "Proceed to a bounded build decision."},
+    )
+    authorization = await client.post(
+        f"/api/product-theses/{thesis_id}/build-authorization",
+        json={"rationale": "The bounded manual test warrants a build definition."},
+    )
+    assert authorization.status_code == 201
+
     feature = await client.post(
         f"/api/need-issues/{need_id}/features",
         json={
+            "product_thesis_id": thesis_id,
             "title": "Confirmation follow-up board",
             "user_task": "Review tomorrow's appointments and send one follow-up",
             "scope": "Manual import and a status board only",
+            "explicit_exclusions": ["No automated messaging in the pilot"],
             "acceptance_criteria": [
                 "Shows unconfirmed appointments",
                 "Records a follow-up timestamp",
@@ -116,6 +168,7 @@ async def test_feature_definition_requires_validated_need_and_tracking_plan(clie
                 "At least 60% of pilot coordinators send a follow-up in the first week"
             ),
             "negative_metric": "More than 20% abandon the board before selecting an appointment",
+            "rollback_condition": "Roll back if coordinators cannot identify a follow-up task.",
         },
     )
 
