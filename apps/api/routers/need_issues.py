@@ -183,6 +183,16 @@ async def create_validation_experiment(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     need_issue = await _get_need_issue_or_404(db, need_issue_id)
+    active_count = await db.scalar(
+        select(func.count(ValidationExperiment.id)).where(
+            ValidationExperiment.status.in_(["draft", "approved", "running"])
+        )
+    )
+    if (active_count or 0) >= 3 and body.wip_override_reason is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Validation WIP limit is 3; an operator override reason is required",
+        )
     experiment = ValidationExperiment(need_issue_id=need_issue.id, **body.model_dump())
     db.add(experiment)
     await db.commit()

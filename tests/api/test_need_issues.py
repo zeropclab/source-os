@@ -700,3 +700,46 @@ async def test_product_thesis_requires_a_discovery_validated_need_and_an_observa
     )
     assert blocked.status_code == 409
     assert "discovery-validated" in blocked.json()["detail"]
+
+
+async def test_validation_wip_limit_requires_a_recorded_override_reason(client):
+    created = await client.post(
+        "/api/need-issues",
+        json={
+            "title": "Bound parallel reality tests",
+            "target_actor": "a defined actor",
+            "context": "a bounded workflow",
+            "problem": "too many parallel experiments hide learning",
+            "desired_outcome": "keep tests reviewable",
+            "unknowns": ["Which test is most consequential"],
+            "next_validation_action": "run one bounded test",
+        },
+    )
+    payload = {
+        "hypothesis": "A bounded action can change the decision.",
+        "audience": "A defined audience.",
+        "method": "One bounded observation.",
+        "budget_cents": 0,
+        "time_limit_hours": 24,
+        "success_threshold": "One useful observation.",
+        "negative_threshold": "No useful observation.",
+        "stop_condition": "Stop after one day.",
+        "requires_external_action": False,
+    }
+    for _ in range(3):
+        response = await client.post(
+            f"/api/need-issues/{created.json()['id']}/experiments", json=payload
+        )
+        assert response.status_code == 201
+    blocked = await client.post(
+        f"/api/need-issues/{created.json()['id']}/experiments", json=payload
+    )
+    assert blocked.status_code == 409
+    overridden = await client.post(
+        f"/api/need-issues/{created.json()['id']}/experiments",
+        json={
+            **payload,
+            "wip_override_reason": "A time-critical paid pilot has an external deadline.",
+        },
+    )
+    assert overridden.status_code == 201
