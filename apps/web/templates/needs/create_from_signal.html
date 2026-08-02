@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}Define Need Issue{% endblock %}
+
+{% block content %}
+<header class="workbench-heading">
+    <div>
+        <p class="eyebrow">Evidence to definition</p>
+        <h1>Define a Need Issue</h1>
+        <p>Write the falsifiable problem definition before considering a product. This creates a captured Need Issue, not a validated demand.</p>
+    </div>
+    <a href="/missions" role="button" class="secondary">Back to Evidence Inbox</a>
+</header>
+
+<article id="accepted-signal-context" aria-live="polite"><p>Loading the accepted evidence…</p></article>
+<div id="need-message" role="status" aria-live="polite"></div>
+
+<form id="need-from-signal-form" hidden>
+    <div class="grid">
+        <label>Who has this problem?
+            <input id="target-actor" required placeholder="Specific actor, not a broad market">
+        </label>
+        <label>Need Issue title
+            <input id="need-title" required placeholder="Actor + concrete problem">
+        </label>
+    </div>
+    <label>When and where does it happen?
+        <textarea id="need-context" rows="2" required placeholder="Triggering situation and operating context"></textarea>
+    </label>
+    <label>Observed problem
+        <textarea id="need-problem" rows="3" required placeholder="State the repeated cost, friction, risk, or workaround—not a proposed feature."></textarea>
+    </label>
+    <label>Desired outcome
+        <textarea id="desired-outcome" rows="2" required placeholder="What would be materially better for this actor?"></textarea>
+    </label>
+    <div class="grid">
+        <label>Current workaround <small>(optional)</small>
+            <textarea id="workaround" rows="3" placeholder="What they do now, if known"></textarea>
+        </label>
+        <label>Unknowns <small>(one per line)</small>
+            <textarea id="unknowns" rows="3" required placeholder="How frequent is it?\nWho pays?\nWhat alternative already solves it?"></textarea>
+        </label>
+    </div>
+    <label>Smallest next validation action
+        <textarea id="next-validation-action" rows="2" required placeholder="A bounded action that could disprove the definition"></textarea>
+    </label>
+    <label>Evidence excerpt <small>(optional; defaults to the recorded observation)</small>
+        <textarea id="evidence-excerpt" rows="2" placeholder="Quote only the portion relevant to this definition"></textarea>
+    </label>
+    <button type="submit">Create captured Need Issue with supporting evidence</button>
+</form>
+
+<script>
+const signalId = new URLSearchParams(window.location.search).get('signal');
+const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+const lines = (id) => document.getElementById(id).value.split('\n').map((value) => value.trim()).filter(Boolean);
+
+async function request(url, options = {}) {
+    const response = await fetch(url, options);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || data));
+    return data;
+}
+
+function showMessage(text, kind = 'error') {
+    document.getElementById('need-message').innerHTML = `<article class="message-${kind}">${escapeHtml(text)}</article>`;
+}
+
+async function loadAcceptedSignal() {
+    const context = document.getElementById('accepted-signal-context');
+    if (!signalId) {
+        context.innerHTML = '<p class="failure-detail">No evidence was selected. Return to the Evidence Inbox and accept a signal before defining a Need Issue.</p>';
+        return;
+    }
+    try {
+        const signal = await request(`/api/external-signals/${signalId}`);
+        if (signal.status !== 'accepted') {
+            context.innerHTML = '<p class="failure-detail">This evidence is not accepted. Review it in the Evidence Inbox before using it in a Need Issue.</p>';
+            return;
+        }
+        context.innerHTML = `<header><strong>Accepted source: ${escapeHtml(signal.source_label)}</strong> <span class="badge">${escapeHtml(signal.status)}</span></header><p><strong>Observation:</strong> ${escapeHtml(signal.observation)}</p><details><summary>Original material and lineage</summary><p><a href="${escapeHtml(signal.source_uri)}" target="_blank" rel="noreferrer">Open original material</a></p><p><strong>Lineage:</strong> ${escapeHtml(signal.lineage_key)}</p></details>`;
+        document.getElementById('need-from-signal-form').hidden = false;
+    } catch (error) {
+        context.innerHTML = `<p class="failure-detail">Could not load selected evidence: ${escapeHtml(error.message)}</p>`;
+    }
+}
+
+document.getElementById('need-from-signal-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    try {
+        const need = await request('/api/need-issues/from-accepted-signal', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                external_signal_id: signalId,
+                title: document.getElementById('need-title').value.trim(),
+                target_actor: document.getElementById('target-actor').value.trim(),
+                context: document.getElementById('need-context').value.trim(),
+                problem: document.getElementById('need-problem').value.trim(),
+                desired_outcome: document.getElementById('desired-outcome').value.trim(),
+                workaround: document.getElementById('workaround').value.trim() || null,
+                unknowns: lines('unknowns'),
+                next_validation_action: document.getElementById('next-validation-action').value.trim(),
+                excerpt: document.getElementById('evidence-excerpt').value.trim() || null
+            })
+        });
+        showMessage(`Need Issue ${need.id} was created as captured with one supporting evidence item. It is not discovery-validated.`, 'success');
+        document.getElementById('need-from-signal-form').querySelector('button[type="submit"]').disabled = true;
+    } catch (error) { showMessage(error.message); }
+});
+
+loadAcceptedSignal();
+</script>
+{% endblock %}

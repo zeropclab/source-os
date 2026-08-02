@@ -35,6 +35,11 @@ class NeedIssueCreate(BaseModel):
     next_validation_action: str = Field(min_length=1)
 
 
+class NeedIssueFromAcceptedSignalCreate(NeedIssueCreate):
+    external_signal_id: uuid.UUID
+    excerpt: str | None = None
+
+
 class NeedEvidenceCreate(BaseModel):
     reference_type: str = Field(min_length=1, max_length=32)
     reference_uri: str = Field(min_length=1)
