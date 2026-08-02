@@ -123,6 +123,7 @@ class ValidationExperiment(Base):
     negative_threshold: Mapped[str] = mapped_column(Text, nullable=False)
     stop_condition: Mapped[str] = mapped_column(Text, nullable=False)
     requires_external_action: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    wip_override_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="draft")
     approval_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     decision: Mapped[str | None] = mapped_column(String(16), nullable=True)

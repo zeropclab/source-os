@@ -181,6 +181,7 @@ class ValidationExperimentCreate(BaseModel):
     negative_threshold: str = Field(min_length=1)
     stop_condition: str = Field(min_length=1)
     requires_external_action: bool = True
+    wip_override_reason: str | None = Field(default=None, min_length=1)
 
 
 class ValidationExperimentResponse(ValidationExperimentCreate):
