@@ -1,3 +1,11 @@
-from . import export, health, items, jobs, need_issues, sources
+from . import acquisition_missions, export, health, items, jobs, need_issues, sources
 
-__all__ = ["health", "sources", "items", "jobs", "export", "need_issues"]
+__all__ = [
+    "acquisition_missions",
+    "health",
+    "sources",
+    "items",
+    "jobs",
+    "export",
+    "need_issues",
+]
