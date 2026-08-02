@@ -23,6 +23,7 @@ from .routers import (
     items,
     jobs,
     need_issues,
+    ontology_hypotheses,
     product_theses,
     source_config_versions,
     source_probe_runs,
@@ -87,6 +88,9 @@ app.include_router(
     feature_outcomes.router, prefix="/api/feature-outcomes", tags=["Feature Outcomes"]
 )
 app.include_router(today.router, prefix="/api/today", tags=["Today"])
+app.include_router(
+    ontology_hypotheses.router, prefix="/api/ontology-hypotheses", tags=["Ontology Hypotheses"]
+)
 app.include_router(
     acquisition_missions.router,
     prefix="/api/acquisition-missions",

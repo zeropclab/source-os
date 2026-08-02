@@ -107,6 +107,18 @@ class NeedChallenge(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class OntologyHypothesis(Base):
+    __tablename__ = "ontology_hypotheses"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    relationship_path: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    source_material: Mapped[str] = mapped_column(Text, nullable=False)
+    counterexample: Mapped[str] = mapped_column(Text, nullable=False)
+    unknowns: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    smallest_validation_action: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="hypothesis")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class ValidationExperiment(Base):
     __tablename__ = "validation_experiments"
 

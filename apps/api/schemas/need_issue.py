@@ -68,6 +68,21 @@ class NeedChallengeResponse(NeedChallengeCreate):
     model_config = {"from_attributes": True}
 
 
+class OntologyHypothesisCreate(BaseModel):
+    relationship_path: list[str] = Field(min_length=2)
+    source_material: str = Field(min_length=1)
+    counterexample: str = Field(min_length=1)
+    unknowns: list[str] = Field(min_length=1)
+    smallest_validation_action: str = Field(min_length=1)
+
+
+class OntologyHypothesisResponse(OntologyHypothesisCreate):
+    id: uuid.UUID
+    status: str
+    created_at: datetime
+    model_config = {"from_attributes": True}
+
+
 class NeedIssueUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=255)
     target_actor: str | None = Field(default=None, min_length=1)
