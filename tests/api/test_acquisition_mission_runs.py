@@ -193,6 +193,30 @@ async def test_worker_lease_covers_the_pinned_mission_time_budget(client, db):
     assert claimed.lease_expires_at >= start + timedelta(minutes=16)
 
 
+async def test_failed_mission_run_can_be_retried_as_a_new_traceable_queued_run(client):
+    mission, _ = await _create_github_mission(client, retry_limit=0)
+    app.dependency_overrides[get_github_mission_transport] = lambda: GitHubFixtureTransport(
+        scenario="rate_limited"
+    )
+    failed = await client.post(
+        f"/api/acquisition-missions/{mission['id']}/runs",
+        json={"execution_mode": "fixture"},
+    )
+    assert failed.status_code == 201
+    assert failed.json()["terminal_state"] == "failed"
+
+    retried = await client.post(f"/api/acquisition-mission-runs/{failed.json()['id']}/retry")
+
+    assert retried.status_code == 201
+    retry_run = retried.json()
+    assert retry_run["id"] != failed.json()["id"]
+    assert retry_run["replay_of_run_id"] == failed.json()["id"]
+    assert retry_run["lifecycle_status"] == "queued"
+    assert retry_run["terminal_state"] == "not_started"
+    assert retry_run["raw_artifacts"] == []
+    assert retry_run["execution_attempt"] == 0
+
+
 async def test_fixture_github_mission_preserves_raw_context_and_creates_traceable_signals(client):
     mission, config = await _create_github_mission(client)
     app.dependency_overrides[get_github_mission_transport] = lambda: GitHubFixtureTransport(

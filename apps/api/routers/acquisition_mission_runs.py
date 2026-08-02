@@ -516,6 +516,52 @@ async def cancel_acquisition_mission_run(
 
 
 @read_router.post(
+    "/{run_id}/retry",
+    response_model=AcquisitionMissionRunResponse,
+    status_code=201,
+)
+async def retry_failed_acquisition_mission_run(
+    run_id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Create a new queued run from a failed run without overwriting its audit record."""
+    original = await db.get(AcquisitionMissionRun, run_id)
+    if original is None:
+        raise HTTPException(status_code=404, detail="Acquisition Mission run not found")
+    if original.lifecycle_status != "completed" or original.terminal_state != "failed":
+        raise HTTPException(status_code=409, detail="Only completed failed runs can be retried")
+    retry_run = AcquisitionMissionRun(
+        mission_id=original.mission_id,
+        source_config_version_id=original.source_config_version_id,
+        replay_of_run_id=original.id,
+        execution_mode=original.execution_mode,
+        lifecycle_status="queued",
+        input_snapshot=copy.deepcopy(original.input_snapshot),
+        budgets=copy.deepcopy(original.budgets),
+        raw_artifacts=[],
+        parser_version=original.parser_version,
+        context_completeness={
+            "issue": False,
+            "comments": False,
+            "parent_context": False,
+            "pagination_complete": False,
+            "missing": ["not_collected"],
+        },
+        checkpoints=["run:retry_queued"],
+        retry_count=0,
+        terminal_state="not_started",
+        failure_detail=None,
+        transport_requests=0,
+        network_requests=0,
+        external_signal_ids=[],
+    )
+    db.add(retry_run)
+    await db.commit()
+    await db.refresh(retry_run)
+    return retry_run
+
+
+@read_router.post(
     "/{run_id}/execute",
     response_model=AcquisitionMissionRunResponse,
     status_code=202,
