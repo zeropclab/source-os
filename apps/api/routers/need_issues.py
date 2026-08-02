@@ -19,6 +19,8 @@ from apps.api.schemas.need_issue import (
     NeedIssueResponse,
     NeedIssueTransition,
     NeedIssueUpdate,
+    ProductThesisCreate,
+    ProductThesisResponse,
     ValidationExperimentCreate,
     ValidationExperimentResponse,
 )
@@ -30,6 +32,7 @@ from packages.storage.models.need_issue import (
     NeedIssue,
     NeedIssueStatusEvent,
     NeedIssueVersion,
+    ProductThesis,
     ValidationExperiment,
 )
 
@@ -184,6 +187,27 @@ async def create_validation_experiment(
     await db.commit()
     await db.refresh(experiment)
     return experiment
+
+
+@router.post(
+    "/{need_issue_id}/product-theses", response_model=ProductThesisResponse, status_code=201
+)
+async def create_product_thesis(
+    need_issue_id: uuid.UUID,
+    body: ProductThesisCreate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    need_issue = await _get_need_issue_or_404(db, need_issue_id)
+    if need_issue.status != "discovery-validated":
+        raise HTTPException(
+            status_code=409,
+            detail="Need Issue must be discovery-validated before a Product Thesis can be created",
+        )
+    thesis = ProductThesis(need_issue_id=need_issue.id, **body.model_dump())
+    db.add(thesis)
+    await db.commit()
+    await db.refresh(thesis)
+    return thesis
 
 
 @router.patch("/{need_issue_id}", response_model=NeedIssueResponse)

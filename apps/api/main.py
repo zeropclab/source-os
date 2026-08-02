@@ -21,6 +21,7 @@ from .routers import (
     items,
     jobs,
     need_issues,
+    product_theses,
     source_config_versions,
     source_probe_runs,
     sources,
@@ -75,6 +76,7 @@ app.include_router(export.router, prefix="/api/export", tags=["Export"])
 app.include_router(need_issues.router, prefix="/api/need-issues", tags=["Need Issues"])
 app.include_router(agent_runs.router, prefix="/api/agent-runs", tags=["Agent Runs"])
 app.include_router(experiments.router, prefix="/api/experiments", tags=["Validation Experiments"])
+app.include_router(product_theses.router, prefix="/api/product-theses", tags=["Product Theses"])
 app.include_router(
     acquisition_missions.router,
     prefix="/api/acquisition-missions",

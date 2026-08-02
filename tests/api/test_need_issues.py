@@ -469,3 +469,129 @@ async def test_validation_experiment_cannot_close_without_market_observation(cli
     )
     assert decision.status_code == 409
     assert "at least one market observation" in decision.json()["detail"]
+
+
+async def test_product_theses_keep_offer_roles_and_manual_economics_separate(client):
+    created = await client.post(
+        "/api/need-issues",
+        json={
+            "title": "A validated workflow can support more than one offer",
+            "target_actor": "independent translators",
+            "context": "when beginning repeat client work",
+            "problem": "approved terminology is scattered",
+            "desired_outcome": "reuse client-approved terms",
+            "unknowns": ["Which buyer will pay"],
+            "next_validation_action": "make a bounded offer",
+        },
+    )
+    need_id = created.json()["id"]
+    validated = await client.post(
+        f"/api/need-issues/{need_id}/transition",
+        json={
+            "status": "discovery-validated",
+            "override_gate": True,
+            "reason": "This test starts from a recorded discovery decision.",
+        },
+    )
+    assert validated.status_code == 200
+
+    manual_offer = {
+        "title": "Concierge term-memory pilot",
+        "user": "translator preparing a repeat-client revision",
+        "beneficiary": "translator and client reviewer",
+        "decision_maker": "translator",
+        "payer": "translator",
+        "trigger": "a repeat client sends a new revision",
+        "promised_outcome": "find approved terms within one minute",
+        "alternative": "search old documents and chat threads",
+        "channel": "individual outreach to repeat-client translators",
+        "price_cents": 1500,
+        "delivery_mechanism": "manual concierge service using a shared spreadsheet",
+        "delivery_mode": "manual",
+    }
+    thesis = await client.post(f"/api/need-issues/{need_id}/product-theses", json=manual_offer)
+    assert thesis.status_code == 201
+    thesis_id = thesis.json()["id"]
+    assert thesis.json()["delivery_mode"] == "manual"
+    assert thesis.json()["payer"] == "translator"
+
+    alternative_offer = await client.post(
+        f"/api/need-issues/{need_id}/product-theses",
+        json={**manual_offer, "title": "Client terminology review service", "price_cents": 5000},
+    )
+    assert alternative_offer.status_code == 201
+    assert alternative_offer.json()["id"] != thesis_id
+
+    quote = await client.post(
+        f"/api/product-theses/{thesis_id}/observations",
+        json={
+            "kind": "quote",
+            "observation": "Quoted a translator a 15 USD concierge pilot.",
+            "amount_cents": 1500,
+        },
+    )
+    effort = await client.post(
+        f"/api/product-theses/{thesis_id}/observations",
+        json={
+            "kind": "delivery_effort",
+            "observation": "Manual delivery took 45 minutes.",
+            "operator_minutes": 45,
+        },
+    )
+    cost = await client.post(
+        f"/api/product-theses/{thesis_id}/observations",
+        json={
+            "kind": "direct_cost",
+            "observation": "Translation glossary subscription cost.",
+            "amount_cents": 300,
+        },
+    )
+    assert quote.status_code == 201
+    assert effort.status_code == 201
+    assert cost.status_code == 201
+
+    decided = await client.post(
+        f"/api/product-theses/{thesis_id}/decision",
+        json={
+            "decision": "continue",
+            "rationale": "The manual offer is now ready for a real offer test.",
+        },
+    )
+    assert decided.status_code == 200
+    assert decided.json()["decision"] == "continue"
+
+
+async def test_product_thesis_requires_a_discovery_validated_need_and_an_observation_to_decide(
+    client,
+):
+    created = await client.post(
+        "/api/need-issues",
+        json={
+            "title": "An unvalidated problem cannot authorize an offer",
+            "target_actor": "a defined actor",
+            "context": "a recurring workflow",
+            "problem": "a costly manual workaround",
+            "desired_outcome": "a measurable replacement",
+            "unknowns": ["Whether it repeats"],
+            "next_validation_action": "seek a counterexample",
+        },
+    )
+    payload = {
+        "title": "A bounded manual offer",
+        "user": "operator",
+        "beneficiary": "operator",
+        "decision_maker": "operator",
+        "payer": "operator",
+        "trigger": "a repeat task",
+        "promised_outcome": "finish the task faster",
+        "alternative": "continue manually",
+        "channel": "direct contact",
+        "price_cents": 1000,
+        "delivery_mechanism": "manual service",
+        "delivery_mode": "service-assisted",
+    }
+    blocked = await client.post(
+        f"/api/need-issues/{created.json()['id']}/product-theses", json=payload
+    )
+    assert blocked.status_code == 409
+    assert "discovery-validated" in blocked.json()["detail"]
