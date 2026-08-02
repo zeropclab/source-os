@@ -1,7 +1,9 @@
 """FastAPI dependency injection."""
 
-import os
-from sqlalchemy.ext.asyncio import AsyncSession
+from packages.adapters.fixture_source_probe import (
+    DispatchingSourceProbeAdapter,
+    FixtureProbeTransport,
+)
 from packages.storage.database import async_session
 
 
@@ -12,3 +14,13 @@ async def get_db():
             yield session
         finally:
             await session.close()
+
+
+def get_source_probe_adapter():
+    """Return the dispatcher with an explicit deterministic reference adapter."""
+    return DispatchingSourceProbeAdapter()
+
+
+def get_source_probe_transport():
+    """Return the no-network transport used by the reference probe adapter."""
+    return FixtureProbeTransport()

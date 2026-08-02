@@ -19,6 +19,7 @@ from .routers import (
     jobs,
     need_issues,
     source_config_versions,
+    source_probe_runs,
     sources,
 )
 
@@ -54,6 +55,16 @@ app.include_router(
     source_config_versions.router,
     prefix="/api/sources",
     tags=["Source Configuration Versions"],
+)
+app.include_router(
+    source_probe_runs.router,
+    prefix="/api/sources",
+    tags=["Source Probes"],
+)
+app.include_router(
+    source_probe_runs.read_router,
+    prefix="/api/source-probes",
+    tags=["Source Probes"],
 )
 app.include_router(items.router, prefix="/api/items", tags=["Items"])
 app.include_router(jobs.router, prefix="/api/jobs", tags=["Jobs"])
