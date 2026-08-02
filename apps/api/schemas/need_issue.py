@@ -287,6 +287,13 @@ class ProductThesisResponse(ProductThesisCreate):
     model_config = {"from_attributes": True}
 
 
+class ProductThesisListResponse(BaseModel):
+    items: list[ProductThesisResponse]
+    total: int
+    page: int
+    page_size: int
+
+
 class ProductThesisObservationCreate(BaseModel):
     kind: Literal["quote", "purchase", "refusal", "refund", "delivery_effort", "direct_cost"]
     observation: str = Field(min_length=1)
