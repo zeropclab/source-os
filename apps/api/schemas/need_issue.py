@@ -148,6 +148,29 @@ class DeliveryRecordResponse(DeliveryRecordCreate):
     model_config = {"from_attributes": True}
 
 
+class FeatureOutcomeCreate(BaseModel):
+    kind: Literal["activation", "repeated_use", "payment", "refund", "churn", "support", "cost"]
+    properties: dict = Field(default_factory=dict)
+    observation: str = Field(min_length=1)
+    amount_cents: int | None = None
+    operator_minutes: int | None = Field(default=None, ge=0)
+    cost_category: str | None = None
+
+
+class FeatureOutcomeResponse(FeatureOutcomeCreate):
+    id: uuid.UUID
+    delivery_record_id: uuid.UUID
+    created_at: datetime
+    model_config = {"from_attributes": True}
+
+
+class OutcomeDecisionCreate(BaseModel):
+    decision: Literal["retain", "iterate", "rollback", "stop"]
+    threshold_comparison: str = Field(min_length=1)
+    contribution_margin_cents: int
+    rationale: str = Field(min_length=1)
+
+
 class ValidationExperimentCreate(BaseModel):
     hypothesis: str = Field(min_length=1)
     audience: str = Field(min_length=1)

@@ -18,6 +18,7 @@ from .routers import (
     experiments,
     export,
     external_signals,
+    feature_outcomes,
     health,
     items,
     jobs,
@@ -80,6 +81,9 @@ app.include_router(experiments.router, prefix="/api/experiments", tags=["Validat
 app.include_router(product_theses.router, prefix="/api/product-theses", tags=["Product Theses"])
 app.include_router(
     delivery_records.router, prefix="/api/delivery-records", tags=["Delivery Evidence"]
+)
+app.include_router(
+    feature_outcomes.router, prefix="/api/feature-outcomes", tags=["Feature Outcomes"]
 )
 app.include_router(
     acquisition_missions.router,

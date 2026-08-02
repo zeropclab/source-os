@@ -283,3 +283,38 @@ class DeliveryRecord(Base):
     released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     feature = relationship("FeatureDefinition", back_populates="delivery_records")
+    outcomes = relationship(
+        "FeatureOutcome", back_populates="delivery", cascade="all, delete-orphan"
+    )
+
+
+class FeatureOutcome(Base):
+    __tablename__ = "feature_outcomes"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    delivery_record_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("delivery_records.id", ondelete="CASCADE"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    properties: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    observation: Mapped[str] = mapped_column(Text, nullable=False)
+    amount_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    operator_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cost_category: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    delivery = relationship("DeliveryRecord", back_populates="outcomes")
+
+
+class OutcomeDecision(Base):
+    __tablename__ = "outcome_decisions"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    delivery_record_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("delivery_records.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+    )
+    decision: Mapped[str] = mapped_column(String(16), nullable=False)
+    threshold_comparison: Mapped[str] = mapped_column(Text, nullable=False)
+    contribution_margin_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
