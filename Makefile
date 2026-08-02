@@ -1,47 +1,22 @@
-.PHONY: dev test lint migrate seed clean install
+.PHONY: dev test lint format migrate install
 
 install:
-	pip install -r requirements.txt -r requirements-dev.txt
-	playwright install chromium
+	uv sync --extra dev
 
 dev:
 	docker compose up -d
-	sleep 2
-	uvicorn apps.api.main:app --reload --host 0.0.0.0 --port 8000
-
-worker:
-	rq worker --url redis://localhost:6379/0
-
-scheduler:
-	python -m apps.worker.scheduler
+	uv run alembic upgrade head
+	uv run uvicorn apps.api.main:app --reload --host 127.0.0.1 --port 8000
 
 test:
-	DATABASE_URL=postgresql+asyncpg://heisenborg@localhost:5432/sourceos_test \
-	REDIS_URL=redis://localhost:6379/1 \
-	STORAGE_ROOT=/tmp/sourceos-test \
-	pytest -v --no-cov
+	uv run pytest -q
 
 lint:
-	ruff check .
-	ruff format --check .
-	mypy packages/ apps/ --ignore-missing-imports
+	uv run ruff check apps packages tests
+	uv run ruff format --check apps packages tests
 
-fmt:
-	ruff check --fix .
-	ruff format .
+format:
+	uv run ruff format apps packages tests
 
 migrate:
-	alembic upgrade head
-
-migrate-new:
-	alembic revision --autogenerate -m "$(msg)"
-
-seed:
-	python infra/scripts/seed_sources.py
-
-clean:
-	docker compose down -v
-	rm -rf data/
-	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
-	find . -type d -name .pytest_cache -exec rm -rf {} + 2>/dev/null || true
-	find . -type d -name *.egg-info -exec rm -rf {} + 2>/dev/null || true
+	uv run alembic upgrade head

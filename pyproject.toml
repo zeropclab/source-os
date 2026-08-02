@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "source-os"
 version = "0.1.0"
-description = "SourceOS 信源作业系统 - 多平台信源监测、采集、内容提取和知识导出"
+description = "SourceOS：证据驱动的现实需求发现与产品验证工作台"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.11"
 authors = [
     {name = "SourceOS Team"}
 ]
-keywords = ["web-scraping", "rss", "content-monitoring", "research-tools"]
+keywords = ["product-discovery", "evidence", "research-operations", "source-management"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
