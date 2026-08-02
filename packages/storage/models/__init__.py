@@ -1,6 +1,7 @@
 from .acquisition_mission import AcquisitionMission
 from .acquisition_mission_run import AcquisitionMissionRun
 from .acquisition_mission_run_signal import AcquisitionMissionRunSignal
+from .agent_run import AgentRun
 from .comment import Comment
 from .content_version import ContentVersion
 from .external_signal import ExternalSignal, SignalTriageEvent
@@ -25,6 +26,7 @@ __all__ = [
     "AcquisitionMission",
     "AcquisitionMissionRun",
     "AcquisitionMissionRunSignal",
+    "AgentRun",
     "SourceItem",
     "ContentVersion",
     "ExternalSignal",

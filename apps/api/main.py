@@ -13,6 +13,7 @@ from .config import settings
 from .routers import (
     acquisition_mission_runs,
     acquisition_missions,
+    agent_runs,
     export,
     external_signals,
     health,
@@ -71,6 +72,7 @@ app.include_router(items.router, prefix="/api/items", tags=["Items"])
 app.include_router(jobs.router, prefix="/api/jobs", tags=["Jobs"])
 app.include_router(export.router, prefix="/api/export", tags=["Export"])
 app.include_router(need_issues.router, prefix="/api/need-issues", tags=["Need Issues"])
+app.include_router(agent_runs.router, prefix="/api/agent-runs", tags=["Agent Runs"])
 app.include_router(
     acquisition_missions.router,
     prefix="/api/acquisition-missions",
