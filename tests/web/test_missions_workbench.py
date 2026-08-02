@@ -36,6 +36,8 @@ async def test_missions_workbench_exposes_an_explicit_bounded_mission_flow(clien
     assert '["succeeded", "completed"].includes(run.terminal_state)' in page
     assert "context.missing || []" in page
     assert "Preview only" in page
+    assert "Worker attempts" in page
+    assert "Lease" in page
 
 
 async def test_dashboard_prioritizes_reality_action_and_objection_over_volume_metrics(client):
