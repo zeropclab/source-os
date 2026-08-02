@@ -102,7 +102,7 @@ document.getElementById('need-from-signal-form').addEventListener('submit', asyn
                 excerpt: document.getElementById('evidence-excerpt').value.trim() || null
             })
         });
-        showMessage(`Need Issue ${need.id} was created as captured with one supporting evidence item. It is not discovery-validated.`, 'success');
+        document.getElementById('need-message').innerHTML = `<article class="message-success">Need Issue ${escapeHtml(need.id)} was created as captured with one supporting evidence item. It is not discovery-validated. <a href="/needs/${encodeURIComponent(need.id)}">Open validation workbench</a>.</article>`;
         document.getElementById('need-from-signal-form').querySelector('button[type="submit"]').disabled = true;
     } catch (error) { showMessage(error.message); }
 });
