@@ -13,6 +13,12 @@ class AcquisitionMissionRunCreate(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class AcquisitionMissionRunControl(BaseModel):
+    reason: str | None = Field(default=None, min_length=1, max_length=1000)
+
+    model_config = {"extra": "forbid"}
+
+
 class AcquisitionMissionDryRunCreate(BaseModel):
     """A deliberately smaller preview of a pinned mission, before evidence is persisted."""
 
@@ -29,6 +35,8 @@ class AcquisitionMissionRunResponse(BaseModel):
     source_config_version_id: uuid.UUID
     replay_of_run_id: uuid.UUID | None
     execution_mode: str
+    lifecycle_status: str
+    control_reason: str | None
     input_snapshot: dict
     budgets: dict
     raw_artifacts: list[dict]
@@ -42,7 +50,7 @@ class AcquisitionMissionRunResponse(BaseModel):
     network_requests: int
     external_signal_ids: list[uuid.UUID]
     started_at: datetime
-    completed_at: datetime
+    completed_at: datetime | None
 
     model_config = {"from_attributes": True}
 

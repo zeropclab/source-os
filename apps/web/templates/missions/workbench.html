@@ -98,7 +98,7 @@ workaround</textarea></label>
     <p><small>A preview saves a traceable run and context risk, but never sends candidate material to Evidence Inbox. A truncated preview is shown as partial, not successful proof.</small></p>
     <div class="triage-actions">
         <button id="preview-mission" type="button" class="secondary">Preview bounded sample</button>
-        <button id="run-mission" type="button">Run selected mode</button>
+        <button id="queue-mission" type="button">Queue selected mode</button>
     </div>
 </article>
 
@@ -189,7 +189,8 @@ function renderRun(run) {
     const context = run.context_completeness || {};
     const gap = (context.missing || []).join(', ') || 'none reported';
     const previewNotice = run.budgets?.preview ? '<p><strong>Preview only:</strong> no candidate evidence was created. Inspect this bounded sample and its context gaps before explicitly running the mission.</p>' : '';
-    document.getElementById('mission-result').innerHTML = `<article><p class="eyebrow">Mission run · ${escapeHtml(run.execution_mode)}</p><h2>${escapeHtml(run.terminal_state)}</h2><div class="run-metrics"><span>Transport requests <strong>${run.transport_requests}</strong></span><span>Network requests <strong>${run.network_requests}</strong></span><span>Retries <strong>${run.retry_count}</strong></span><span>Raw artifacts <strong>${run.raw_artifacts.length}</strong></span><span>Evidence candidates <strong>${run.external_signal_ids.length}</strong></span></div>${previewNotice}<p><strong>Context gaps:</strong> ${escapeHtml(gap)}</p><p><strong>Checkpoints:</strong> ${escapeHtml((run.checkpoints || []).join(' · '))}</p>${run.failure_detail ? `<p class="failure-detail"><strong>Failure detail:</strong> ${escapeHtml(run.failure_detail)}</p>` : ''}</article>`;
+    const controls = run.lifecycle_status === 'queued' ? `<div class="triage-actions"><button type="button" onclick="executeQueuedRun('${run.id}')">Execute queued run</button><button type="button" class="secondary" onclick="controlQueuedRun('${run.id}', 'pause')">Pause</button><button type="button" class="contrast outline" onclick="controlQueuedRun('${run.id}', 'cancel')">Cancel</button></div>` : run.lifecycle_status === 'paused' ? `<div class="triage-actions"><button type="button" onclick="controlQueuedRun('${run.id}', 'resume')">Resume</button></div>` : '';
+    document.getElementById('mission-result').innerHTML = `<article><p class="eyebrow">Mission run · ${escapeHtml(run.execution_mode)}</p><h2>${escapeHtml(run.lifecycle_status)} · ${escapeHtml(run.terminal_state)}</h2><div class="run-metrics"><span>Transport requests <strong>${run.transport_requests}</strong></span><span>Network requests <strong>${run.network_requests}</strong></span><span>Retries <strong>${run.retry_count}</strong></span><span>Raw artifacts <strong>${run.raw_artifacts.length}</strong></span><span>Evidence candidates <strong>${run.external_signal_ids.length}</strong></span></div>${previewNotice}<p><strong>Context gaps:</strong> ${escapeHtml(gap)}</p><p><strong>Checkpoints:</strong> ${escapeHtml((run.checkpoints || []).join(' · '))}</p>${controls}${run.failure_detail ? `<p class="failure-detail"><strong>Failure detail:</strong> ${escapeHtml(run.failure_detail)}</p>` : ''}</article>`;
 }
 
 document.getElementById('preview-mission').addEventListener('click', async () => {
@@ -208,19 +209,37 @@ document.getElementById('preview-mission').addEventListener('click', async () =>
     finally { button.disabled = false; }
 });
 
-document.getElementById('run-mission').addEventListener('click', async () => {
+document.getElementById('queue-mission').addEventListener('click', async () => {
     if (!state.mission) return;
     const mode = document.getElementById('execution-mode').value;
     try {
-        document.getElementById('run-mission').disabled = true;
-        const run = await request(`/api/acquisition-missions/${state.mission.id}/runs`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({execution_mode: mode}) });
+        document.getElementById('queue-mission').disabled = true;
+        const run = await request(`/api/acquisition-missions/${state.mission.id}/queued-runs`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({execution_mode: mode}) });
+        state.run = run;
+        renderRun(run);
+        message('Mission is queued. It has not contacted the source or created evidence.', 'success');
+    } catch (error) { message(error.message, 'error'); }
+    finally { document.getElementById('queue-mission').disabled = false; }
+});
+
+async function controlQueuedRun(runId, action) {
+    try {
+        const run = await request(`/api/acquisition-mission-runs/${runId}/${action}`, { method: 'POST' });
+        state.run = run;
+        renderRun(run);
+        message(`Run is now ${run.lifecycle_status}.`, 'success');
+    } catch (error) { message(error.message, 'error'); }
+}
+
+async function executeQueuedRun(runId) {
+    try {
+        const run = await request(`/api/acquisition-mission-runs/${runId}/execute`, { method: 'POST' });
         state.run = run;
         renderRun(run);
         await loadEvidence();
         message(`Mission completed with terminal state: ${run.terminal_state}.`, ["succeeded", "completed"].includes(run.terminal_state) ? 'success' : 'error');
     } catch (error) { message(error.message, 'error'); }
-    finally { document.getElementById('run-mission').disabled = false; }
-});
+}
 
 async function loadEvidence() {
     try {
