@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Product Thesis Library{% endblock %}
+{% block content %}
+<header class="workbench-heading">
+    <div>
+        <p class="eyebrow">Offer hypotheses</p>
+        <h1>Product Thesis Library</h1>
+        <p>一个 Need 可以对应多个方案。这里管理方案假设、报价观察和建设授权，不把任何一项当成真实商业结果。</p>
+    </div>
+    <a href="/needs" role="button" class="secondary">Open Need Library</a>
+</header>
+
+<section>
+    <div class="grid">
+        <label>Status
+            <select id="thesis-status-filter">
+                <option value="">All statuses</option>
+                <option value="draft">Draft</option>
+                <option value="decided">Decided</option>
+            </select>
+        </label>
+        <div><button id="refresh-thesis-library" type="button" class="secondary outline">Refresh library</button></div>
+    </div>
+    <p><small>A price, a decision, or a build authorization is not evidence of purchase, retention, contribution margin, or profit.</small></p>
+    <div id="thesis-library"><p>Loading Product Theses…</p></div>
+</section>
+
+<script>
+const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (character) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[character]));
+async function loadThesisLibrary() {
+    const status = document.getElementById('thesis-status-filter').value;
+    const endpoint = `/api/product-theses?page=1&page_size=100${status ? `&status=${encodeURIComponent(status)}` : ''}`;
+    const target = document.getElementById('thesis-library');
+    try {
+        const response = await fetch(endpoint);
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail || 'Could not load Product Thesis Library');
+        if (!data.items.length) { target.innerHTML = '<p><em>No Product Thesis matches this view. Define a validated Need before proposing an offer.</em></p>'; return; }
+        target.innerHTML = `<div class="evidence-list">${data.items.map((thesis) => `<article><header><strong>${escapeHtml(thesis.title)}</strong> <span class="badge">${escapeHtml(thesis.status)}</span></header><p><strong>User:</strong> ${escapeHtml(thesis.user)} · <strong>Payer:</strong> ${escapeHtml(thesis.payer)}</p><p><strong>Promise:</strong> ${escapeHtml(thesis.promised_outcome)}</p><p><small>Price hypothesis: ${thesis.price_cents} cents · ${escapeHtml(thesis.delivery_mode)} delivery · decision: ${escapeHtml(thesis.decision || 'not decided')}</small></p><a href="/product-theses/${encodeURIComponent(thesis.id)}" role="button" class="secondary">Open decision workbench</a></article>`).join('')}</div>`;
+    } catch (error) { target.innerHTML = `<p class="failure-detail">${escapeHtml(error.message)}</p>`; }
+}
+document.getElementById('thesis-status-filter').addEventListener('change', loadThesisLibrary);
+document.getElementById('refresh-thesis-library').addEventListener('click', loadThesisLibrary);
+loadThesisLibrary();
+</script>
+{% endblock %}

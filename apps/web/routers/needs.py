@@ -15,6 +15,13 @@ async def need_library(request: Request):
     return templates.TemplateResponse(request, "needs/list.html", {"title": "Need Library"})
 
 
+@product_thesis_router.get("", response_class=HTMLResponse)
+async def product_thesis_library(request: Request):
+    return templates.TemplateResponse(
+        request, "product_theses/list.html", {"title": "Product Thesis Library"}
+    )
+
+
 @feature_router.get("/create", response_class=HTMLResponse)
 async def create_feature_definition(request: Request):
     return templates.TemplateResponse(request, "features/create.html", {"title": "Define Feature"})

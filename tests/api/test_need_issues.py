@@ -867,6 +867,15 @@ async def test_product_theses_keep_offer_roles_and_manual_economics_separate(cli
     assert alternative_offer.status_code == 201
     assert alternative_offer.json()["id"] != thesis_id
 
+    library = await client.get("/api/product-theses?page=1&page_size=20")
+    assert library.status_code == 200
+    assert library.json()["total"] == 2
+    assert {item["id"] for item in library.json()["items"]} == {
+        thesis_id,
+        alternative_offer.json()["id"],
+    }
+    assert all(item["status"] == "draft" for item in library.json()["items"])
+
     quote = await client.post(
         f"/api/product-theses/{thesis_id}/observations",
         json={

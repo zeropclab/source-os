@@ -151,6 +151,14 @@ async def test_product_thesis_workbench_exposes_decision_controls(client):
     assert "/build-authorization" in page
     assert "not market proof" in page
 
+    library = await client.get("/product-theses")
+    assert library.status_code == 200
+    library_page = library.text
+    assert 'id="thesis-library"' in library_page
+    assert 'id="thesis-status-filter"' in library_page
+    assert "/api/product-theses?page=1&page_size=100" in library_page
+    assert "Open decision workbench" in library_page
+
 
 async def test_delivery_workbench_exposes_review_release_tracking_and_outcome_controls(client):
     response = await client.get("/features/11111111-1111-1111-1111-111111111111/delivery")

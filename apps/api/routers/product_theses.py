@@ -3,7 +3,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +12,7 @@ from apps.api.schemas.need_issue import (
     BuildAuthorizationCreate,
     BuildAuthorizationResponse,
     ProductThesisDecision,
+    ProductThesisListResponse,
     ProductThesisObservationCreate,
     ProductThesisObservationResponse,
     ProductThesisResponse,
@@ -31,6 +32,29 @@ async def _thesis_or_404(db: AsyncSession, thesis_id: uuid.UUID) -> ProductThesi
     if thesis is None:
         raise HTTPException(status_code=404, detail="Product Thesis not found")
     return thesis
+
+
+@router.get("", response_model=ProductThesisListResponse)
+async def list_product_theses(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    status: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+):
+    query = select(ProductThesis)
+    count_query = select(func.count(ProductThesis.id))
+    if status is not None:
+        query = query.where(ProductThesis.status == status)
+        count_query = count_query.where(ProductThesis.status == status)
+    total = await db.scalar(count_query) or 0
+    theses = await db.scalars(
+        query.order_by(ProductThesis.updated_at.desc(), ProductThesis.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    return ProductThesisListResponse(
+        items=list(theses), total=total, page=page, page_size=page_size
+    )
 
 
 @router.get("/{thesis_id}/workbench", response_model=ProductThesisWorkbenchResponse)
