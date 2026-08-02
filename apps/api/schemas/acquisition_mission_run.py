@@ -37,6 +37,8 @@ class AcquisitionMissionRunResponse(BaseModel):
     execution_mode: str
     lifecycle_status: str
     control_reason: str | None
+    execution_attempt: int
+    lease_expires_at: datetime | None
     input_snapshot: dict
     budgets: dict
     raw_artifacts: list[dict]
