@@ -36,6 +36,18 @@ async def test_dashboard_prioritizes_reality_action_and_objection_over_volume_me
     assert "Next reality action" in page
 
 
+async def test_manual_observation_workbench_imports_traceable_reality_signals(client):
+    response = await client.get("/observations")
+
+    assert response.status_code == 200
+    page = response.text
+    assert 'id="manual-observation-form"' in page
+    assert 'id="observation-original-material"' in page
+    assert 'id="observation-observed-at"' in page
+    assert "/api/external-signals" in page
+    assert "does not validate a Need" in page
+
+
 async def test_source_creation_page_can_define_a_github_issue_source(client):
     response = await client.get("/sources/create")
 
