@@ -8,6 +8,11 @@ export type StartEnvelope = {
   type: "start";
   payload: {
     evidence_bundle_hash: string;
+    task_instruction: string;
+    citations: string[];
+    evidence_bundle: Array<Record<string, unknown>>;
+    provider: string;
+    model: string;
     budget: {
       max_tool_calls: number;
       max_tokens: number;
@@ -27,6 +32,14 @@ export function parseEnvelope(line: string): RuntimeEnvelope {
   }
   if (envelope.type !== "start" || !envelope.agent_run_id || !envelope.message_id) {
     throw new Error("Only a fully identified start envelope is accepted");
+  }
+  if (
+    !envelope.payload?.task_instruction ||
+    !envelope.payload?.provider ||
+    !envelope.payload?.model ||
+    !Array.isArray(envelope.payload?.evidence_bundle)
+  ) {
+    throw new Error("Start envelope needs bounded task, provider, and model identifiers");
   }
   return envelope as StartEnvelope;
 }

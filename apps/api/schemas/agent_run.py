@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 
 class AgentRunCreate(BaseModel):
-    evidence_signal_ids: list[uuid.UUID] = Field(min_length=1)
+    evidence_signal_ids: list[uuid.UUID] = Field(min_length=1, max_length=20)
     task_instruction: str = Field(min_length=1, max_length=2_000)
     idempotency_key: str = Field(min_length=1, max_length=255)
     model_version: str = Field(min_length=1, max_length=100)

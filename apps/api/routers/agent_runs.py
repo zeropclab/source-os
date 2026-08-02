@@ -12,11 +12,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.dependencies import get_db
 from apps.api.schemas.agent_run import AgentRunCreate, AgentRunOperatorDecision, AgentRunResponse
+from apps.api.services.pi_runtime import PiRuntimeError, run_pi_proposal
 from packages.storage.models.agent_run import AgentRun
 from packages.storage.models.external_signal import ExternalSignal
 
 router = APIRouter()
-_TOOL_ALLOWLIST = ["retrieve_evidence", "find_counterevidence"]
+_TOOL_ALLOWLIST: list[str] = []
 
 
 async def _run_or_404(db: AsyncSession, run_id: uuid.UUID) -> AgentRun:
@@ -29,33 +30,6 @@ async def _run_or_404(db: AsyncSession, run_id: uuid.UUID) -> AgentRun:
 def _bundle_hash(bundle: list[dict]) -> str:
     encoded = json.dumps(bundle, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode()).hexdigest()
-
-
-def _proposal(bundle: list[dict]) -> dict:
-    citations = [entry["signal_id"] for entry in bundle]
-    first = bundle[0]
-    return {
-        "kind": "need_issue_proposal",
-        "proposed_status": "captured",
-        "actor": "unknown — proposal requires operator review",
-        "problem": first["observation"],
-        "desired_outcome": "unknown — requires a real validation action",
-        "supporting_refs": citations[:1],
-        "counter_refs": citations[1:],
-        "citations": citations,
-        "unknowns": [
-            "Independence, prevalence, willingness to pay, and delivery feasibility are unknown."
-        ],
-        "competing_explanations": [
-            "The reported workaround may be a one-off or already solved by existing tools."
-        ],
-        "next_validation_action": (
-            "Ask one target actor for a concrete recent example and a counterexample."
-        ),
-        "cannot_conclude": (
-            "This proposal is not a validated need, market size, or business decision."
-        ),
-    }
 
 
 @router.post("", response_model=AgentRunResponse, status_code=201)
@@ -120,18 +94,29 @@ async def execute_agent_run(run_id: uuid.UUID, db: Annotated[AsyncSession, Depen
         raise HTTPException(status_code=409, detail="Cancelled Agent Run cannot execute")
     if run.status == "completed":
         return run
-    tool_calls = min(len(run.evidence_bundle), run.budgets["max_tool_calls"])
-    run.tool_audit = [
-        {"tool": "retrieve_evidence", "signal_id": item["signal_id"], "status": "completed"}
-        for item in run.evidence_bundle[:tool_calls]
-    ]
-    run.usage = {
-        "tool_calls": tool_calls,
-        "tokens": min(run.budgets["max_tokens"], 100 * tool_calls),
-        "cost_cents": min(run.budgets["max_cost_cents"], tool_calls),
-    }
-    run.output = _proposal(run.evidence_bundle)
-    run.status = "completed"
+    try:
+        runtime_output = await run_pi_proposal(
+            run_id=str(run.id),
+            task_instruction=run.task_instruction,
+            evidence_bundle_hash=run.evidence_bundle_hash,
+            evidence_bundle=run.evidence_bundle,
+            model_version=run.model_version,
+            budgets=run.budgets,
+        )
+        runtime_usage = runtime_output.pop("usage", {})
+        run.output = runtime_output
+        run.tool_audit = [
+            {"tool": "Pi Agent", "status": "completed", "policy": "no executable tools"}
+        ]
+        run.usage = {
+            "tool_calls": 0,
+            "tokens": runtime_usage.get("tokens", 0),
+            "cost_cents": runtime_usage.get("cost_cents", 0),
+        }
+        run.status = "completed"
+    except PiRuntimeError as error:
+        run.errors = [*run.errors, {"stage": "runtime", "error": str(error)}]
+        run.status = "failed"
     run.completed_at = datetime.now(UTC)
     await db.commit()
     await db.refresh(run)
