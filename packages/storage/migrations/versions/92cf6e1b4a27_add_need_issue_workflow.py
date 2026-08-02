@@ -93,4 +93,3 @@ def downgrade() -> None:
     op.drop_table("feature_definitions")
     op.drop_table("need_evidence")
     op.drop_table("need_issues")
-

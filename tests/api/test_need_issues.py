@@ -98,4 +98,3 @@ async def test_feature_definition_requires_validated_need_and_tracking_plan(clie
     body = feature.json()
     assert body["need_issue_id"] == need_id
     assert body["status"] == "defined"
-

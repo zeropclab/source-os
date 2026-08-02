@@ -130,4 +130,3 @@ async def create_feature_definition(
     await db.commit()
     await db.refresh(feature)
     return feature
-

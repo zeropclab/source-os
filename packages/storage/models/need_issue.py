@@ -76,4 +76,3 @@ class FeatureDefinition(Base):
     )
 
     need_issue = relationship("NeedIssue", back_populates="features")
-
