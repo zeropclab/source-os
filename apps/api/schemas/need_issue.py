@@ -243,6 +243,13 @@ class ValidationExperimentResponse(ValidationExperimentCreate):
     model_config = {"from_attributes": True}
 
 
+class ValidationExperimentListResponse(BaseModel):
+    items: list[ValidationExperimentResponse]
+    total: int
+    page: int
+    page_size: int
+
+
 class ExperimentApproval(BaseModel):
     operator_note: str = Field(min_length=1)
 
