@@ -27,6 +27,7 @@ from .routers import (
     source_config_versions,
     source_probe_runs,
     sources,
+    today,
 )
 
 logger = structlog.get_logger()
@@ -85,6 +86,7 @@ app.include_router(
 app.include_router(
     feature_outcomes.router, prefix="/api/feature-outcomes", tags=["Feature Outcomes"]
 )
+app.include_router(today.router, prefix="/api/today", tags=["Today"])
 app.include_router(
     acquisition_missions.router,
     prefix="/api/acquisition-missions",
