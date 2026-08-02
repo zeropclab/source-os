@@ -13,11 +13,12 @@ from apps.api.dependencies import get_db, get_source_probe_adapter
 from apps.api.schemas.source_probe_run import SourceProbeRunCreate, SourceProbeRunResponse
 from packages.adapters.source_probe import (
     AccessState,
-    ProbeBudget,
+    ProbeExecution,
     ProbeRequestBudgetExceededError,
     ProbeResult,
     SourceProbeAdapter,
 )
+from packages.storage.models.source import Source
 from packages.storage.models.source_config_version import SourceConfigVersion
 from packages.storage.models.source_probe_run import SourceProbeRun
 
@@ -30,6 +31,23 @@ def _assert_adapter_contract(result: ProbeResult) -> None:
         raise HTTPException(
             status_code=502, detail="Probe adapter reported success without a sample"
         )
+
+
+def _failed_probe_result(
+    access_state: AccessState,
+    *,
+    context_risk: str,
+    outcome_detail: str,
+) -> ProbeResult:
+    return ProbeResult(
+        status="failed",
+        access_state=access_state,
+        sample=None,
+        pagination_supported=None,
+        replies_supported=None,
+        context_risks=[context_risk],
+        outcome_detail=outcome_detail,
+    )
 
 
 @router.post(
@@ -66,40 +84,33 @@ async def create_source_probe_run(
             detail="Probe time budget exceeds the immutable source configuration limit",
         )
 
-    budget = ProbeBudget(
+    source = await db.get(Source, source_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Source not found")
+
+    execution = ProbeExecution(
         request_limit=body.request_budget,
         time_limit_seconds=body.time_budget_seconds,
     )
     started_at = time.monotonic()
     try:
         async with asyncio.timeout(body.time_budget_seconds):
-            result = await adapter.probe(config, budget=budget)
+            result = await adapter.probe(source, config, execution=execution)
     except ProbeRequestBudgetExceededError:
-        result = ProbeResult(
-            status="failed",
-            access_state=cast(AccessState, config.access_mode),
-            sample=None,
-            pagination_supported=False,
-            replies_supported=False,
-            context_risks=["Probe exhausted its request budget before completion."],
+        result = _failed_probe_result(
+            cast(AccessState, config.access_mode),
+            context_risk="Probe exhausted its request budget before completion.",
             outcome_detail="request_budget_exhausted",
         )
     except TimeoutError:
-        result = ProbeResult(
-            status="failed",
-            access_state=cast(AccessState, config.access_mode),
-            sample=None,
-            pagination_supported=False,
-            replies_supported=False,
-            context_risks=["Probe timed out before source capabilities were verified."],
+        result = _failed_probe_result(
+            cast(AccessState, config.access_mode),
+            context_risk="Probe timed out before source capabilities were verified.",
             outcome_detail="probe_timeout",
         )
     else:
         _assert_adapter_contract(result)
-    elapsed_ms = min(
-        int((time.monotonic() - started_at) * 1000),
-        body.time_budget_seconds * 1000,
-    )
+    elapsed_ms = int((time.monotonic() - started_at) * 1000)
     run = SourceProbeRun(
         source_config_version_id=config.id,
         **body.model_dump(),
@@ -110,7 +121,7 @@ async def create_source_probe_run(
         pagination_supported=result.pagination_supported,
         replies_supported=result.replies_supported,
         context_risks=result.context_risks,
-        consumed_requests=budget.consumed_requests,
+        consumed_requests=execution.consumed_requests,
         elapsed_ms=elapsed_ms,
         outcome_detail=result.outcome_detail,
     )

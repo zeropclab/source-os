@@ -26,8 +26,8 @@ def upgrade() -> None:
         sa.Column("access_state", sa.String(length=24), nullable=False),
         sa.Column("sample_available", sa.Boolean(), nullable=False),
         sa.Column("sample", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-        sa.Column("pagination_supported", sa.Boolean(), nullable=False),
-        sa.Column("replies_supported", sa.Boolean(), nullable=False),
+        sa.Column("pagination_supported", sa.Boolean(), nullable=True),
+        sa.Column("replies_supported", sa.Boolean(), nullable=True),
         sa.Column("context_risks", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("consumed_requests", sa.Integer(), nullable=False),
         sa.Column("elapsed_ms", sa.Integer(), nullable=False),
@@ -42,6 +42,27 @@ def upgrade() -> None:
             ["source_config_version_id"],
             ["source_config_versions.id"],
             ondelete="RESTRICT",
+        ),
+        sa.CheckConstraint("request_budget > 0", name="ck_probe_request_budget_positive"),
+        sa.CheckConstraint("time_budget_seconds > 0", name="ck_probe_time_budget_positive"),
+        sa.CheckConstraint("consumed_requests >= 0", name="ck_probe_consumed_requests_nonnegative"),
+        sa.CheckConstraint(
+            "consumed_requests <= request_budget", name="ck_probe_consumed_within_budget"
+        ),
+        sa.CheckConstraint("elapsed_ms >= 0", name="ck_probe_elapsed_nonnegative"),
+        sa.CheckConstraint(
+            "status IN ('succeeded', 'empty', 'failed')", name="ck_probe_status_valid"
+        ),
+        sa.CheckConstraint(
+            "access_state IN ('public', 'credentialed', 'subscription', 'rate_limited', "
+            "'blocked', 'unsupported')",
+            name="ck_probe_access_state_valid",
+        ),
+        sa.CheckConstraint(
+            "sample_available = (sample IS NOT NULL)", name="ck_probe_sample_flag_consistent"
+        ),
+        sa.CheckConstraint(
+            "status <> 'succeeded' OR sample_available", name="ck_probe_success_has_sample"
         ),
         sa.PrimaryKeyConstraint("id"),
     )

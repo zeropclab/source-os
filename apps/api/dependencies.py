@@ -1,6 +1,6 @@
 """FastAPI dependency injection."""
 
-from packages.adapters.source_probe import UnsupportedSourceProbeAdapter
+from packages.adapters.fixture_source_probe import DispatchingSourceProbeAdapter
 from packages.storage.database import async_session
 
 
@@ -14,5 +14,5 @@ async def get_db():
 
 
 def get_source_probe_adapter():
-    """Return the safe default probe adapter until platform adapters are registered."""
-    return UnsupportedSourceProbeAdapter()
+    """Return the dispatcher with an explicit deterministic reference adapter."""
+    return DispatchingSourceProbeAdapter()

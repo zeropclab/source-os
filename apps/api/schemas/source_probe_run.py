@@ -23,8 +23,8 @@ class SourceProbeRunResponse(SourceProbeRunCreate):
     ]
     sample_available: bool
     sample: dict[str, str] | None
-    pagination_supported: bool
-    replies_supported: bool
+    pagination_supported: bool | None
+    replies_supported: bool | None
     context_risks: list[str]
     consumed_requests: int
     elapsed_ms: int

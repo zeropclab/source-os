@@ -1,8 +1,10 @@
-"""Adapter boundary for bounded source-capability probes."""
+"""Runtime-controlled adapter boundary for bounded source-capability probes."""
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import Literal, Protocol, TypeVar
 
+from packages.storage.models.source import Source
 from packages.storage.models.source_config_version import SourceConfigVersion
 
 ProbeStatus = Literal["succeeded", "empty", "failed"]
@@ -16,8 +18,8 @@ class ProbeResult:
     status: ProbeStatus
     access_state: AccessState
     sample: dict[str, str] | None
-    pagination_supported: bool
-    replies_supported: bool
+    pagination_supported: bool | None
+    replies_supported: bool | None
     context_risks: list[str]
     outcome_detail: str | None = None
 
@@ -26,24 +28,34 @@ class ProbeRequestBudgetExceededError(RuntimeError):
     pass
 
 
+RequestResult = TypeVar("RequestResult")
+
+
 @dataclass
-class ProbeBudget:
+class ProbeExecution:
     request_limit: int
     time_limit_seconds: int
-    consumed_requests: int = 0
+    _consumed_requests: int = 0
 
-    def consume_request(self) -> None:
-        if self.consumed_requests >= self.request_limit:
+    @property
+    def consumed_requests(self) -> int:
+        return self._consumed_requests
+
+    async def request(self, operation: Callable[[], Awaitable[RequestResult]]) -> RequestResult:
+        """Run one external request through the runtime-owned budget gate."""
+        if self._consumed_requests >= self.request_limit:
             raise ProbeRequestBudgetExceededError
-        self.consumed_requests += 1
+        self._consumed_requests += 1
+        return await operation()
 
 
 class SourceProbeAdapter(Protocol):
     async def probe(
         self,
+        source: Source,
         config: SourceConfigVersion,
         *,
-        budget: ProbeBudget,
+        execution: ProbeExecution,
     ) -> ProbeResult: ...
 
 
@@ -52,69 +64,17 @@ class UnsupportedSourceProbeAdapter:
 
     async def probe(
         self,
+        source: Source,
         config: SourceConfigVersion,
         *,
-        budget: ProbeBudget,
+        execution: ProbeExecution,
     ) -> ProbeResult:
         return ProbeResult(
             status="failed",
             access_state="unsupported",
             sample=None,
-            pagination_supported=False,
-            replies_supported=False,
+            pagination_supported=None,
+            replies_supported=None,
             context_risks=["No probe adapter is registered for this source."],
             outcome_detail="unsupported_adapter",
         )
-
-
-class FixtureSourceProbeAdapter:
-    """Deterministic adapter used to prove orchestration without live network access."""
-
-    def __init__(self, scenario: str):
-        self.scenario = scenario
-
-    async def probe(
-        self,
-        config: SourceConfigVersion,
-        *,
-        budget: ProbeBudget,
-    ) -> ProbeResult:
-        if self.scenario == "accessible_with_context":
-            budget.consume_request()
-            return ProbeResult(
-                status="succeeded",
-                access_state="public",
-                sample={
-                    "title": "Users need reply context",
-                    "body": "The top-level comment is ambiguous without its parent discussion.",
-                },
-                pagination_supported=True,
-                replies_supported=True,
-                context_risks=[],
-            )
-        if self.scenario == "empty_result":
-            budget.consume_request()
-            return ProbeResult(
-                status="empty",
-                access_state="public",
-                sample=None,
-                pagination_supported=True,
-                replies_supported=True,
-                context_risks=[],
-                outcome_detail="No matching material was returned.",
-            )
-        if self.scenario == "rate_limited":
-            budget.consume_request()
-            return ProbeResult(
-                status="failed",
-                access_state="rate_limited",
-                sample=None,
-                pagination_supported=False,
-                replies_supported=False,
-                context_risks=[
-                    "Pagination and reply context could not be verified because the source "
-                    "rate-limited the probe."
-                ],
-                outcome_detail="rate_limited",
-            )
-        raise ValueError(f"Unknown fixture probe scenario: {self.scenario}")
