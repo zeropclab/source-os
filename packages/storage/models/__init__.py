@@ -1,3 +1,4 @@
+from .acquisition_mission import AcquisitionMission
 from .comment import Comment
 from .content_version import ContentVersion
 from .external_signal import ExternalSignal, SignalTriageEvent
@@ -9,6 +10,7 @@ from .source_item import SourceItem
 
 __all__ = [
     "Source",
+    "AcquisitionMission",
     "SourceItem",
     "ContentVersion",
     "ExternalSignal",

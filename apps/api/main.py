@@ -10,7 +10,16 @@ from fastapi.staticfiles import StaticFiles
 from apps.web.main import web_app
 
 from .config import settings
-from .routers import export, external_signals, health, items, jobs, need_issues, sources
+from .routers import (
+    acquisition_missions,
+    export,
+    external_signals,
+    health,
+    items,
+    jobs,
+    need_issues,
+    sources,
+)
 
 logger = structlog.get_logger()
 
@@ -44,6 +53,11 @@ app.include_router(items.router, prefix="/api/items", tags=["Items"])
 app.include_router(jobs.router, prefix="/api/jobs", tags=["Jobs"])
 app.include_router(export.router, prefix="/api/export", tags=["Export"])
 app.include_router(need_issues.router, prefix="/api/need-issues", tags=["Need Issues"])
+app.include_router(
+    acquisition_missions.router,
+    prefix="/api/acquisition-missions",
+    tags=["Acquisition Missions"],
+)
 app.include_router(
     external_signals.router, prefix="/api/external-signals", tags=["External Signals"]
 )
