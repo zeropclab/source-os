@@ -19,6 +19,7 @@ from .routers import (
     export,
     external_signals,
     feature_outcomes,
+    features,
     health,
     items,
     jobs,
@@ -91,6 +92,7 @@ app.include_router(need_issues.router, prefix="/api/need-issues", tags=["Need Is
 app.include_router(agent_runs.router, prefix="/api/agent-runs", tags=["Agent Runs"])
 app.include_router(experiments.router, prefix="/api/experiments", tags=["Validation Experiments"])
 app.include_router(product_theses.router, prefix="/api/product-theses", tags=["Product Theses"])
+app.include_router(features.router, prefix="/api/features", tags=["Feature Definitions"])
 app.include_router(
     delivery_records.router, prefix="/api/delivery-records", tags=["Delivery Evidence"]
 )

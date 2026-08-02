@@ -133,6 +133,13 @@ class FeatureDefinitionResponse(FeatureDefinitionCreate):
     model_config = {"from_attributes": True}
 
 
+class FeatureDefinitionListResponse(BaseModel):
+    items: list[FeatureDefinitionResponse]
+    total: int
+    page: int
+    page_size: int
+
+
 class BuildAuthorizationCreate(BaseModel):
     rationale: str = Field(min_length=1)
 

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Feature Library{% endblock %}
+{% block content %}
+<header class="workbench-heading">
+    <div>
+        <p class="eyebrow">Authorized build contracts</p>
+        <h1>Feature Library</h1>
+        <p>功能必须可回到对应 Need 和 Product Thesis，并继续进入 Review、Release、Tracking 与结果记录。</p>
+    </div>
+    <a href="/product-theses" role="button" class="secondary">Open Product Thesis Library</a>
+</header>
+
+<section>
+    <div class="grid">
+        <label>Status
+            <select id="feature-status-filter">
+                <option value="">All statuses</option>
+                <option value="defined">Defined</option>
+            </select>
+        </label>
+        <div><button id="refresh-feature-library" type="button" class="secondary outline">Refresh library</button></div>
+    </div>
+    <p><small>A defined Feature, passing tests, or a release record does not establish activation, retention, payment, contribution margin, or profit.</small></p>
+    <div id="feature-library"><p>Loading Features…</p></div>
+</section>
+
+<script>
+const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (character) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[character]));
+async function loadFeatureLibrary() {
+    const status = document.getElementById('feature-status-filter').value;
+    const endpoint = `/api/features?page=1&page_size=100${status ? `&status=${encodeURIComponent(status)}` : ''}`;
+    const target = document.getElementById('feature-library');
+    try {
+        const response = await fetch(endpoint);
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail || 'Could not load Feature Library');
+        if (!data.items.length) { target.innerHTML = '<p><em>No Feature Definition matches this view. A Product Thesis needs an explicit build authorization first.</em></p>'; return; }
+        target.innerHTML = `<div class="evidence-list">${data.items.map((feature) => `<article><header><strong>${escapeHtml(feature.title)}</strong> <span class="badge">${escapeHtml(feature.status)}</span></header><p><strong>User task:</strong> ${escapeHtml(feature.user_task)}</p><p><strong>Scope:</strong> ${escapeHtml(feature.scope)}</p><p><small>Need: ${escapeHtml(feature.need_issue_id)} · Thesis: ${escapeHtml(feature.product_thesis_id)}</small></p><p><strong>Tracking:</strong> ${escapeHtml(feature.tracking_events.join(', '))}</p><a href="/features/${encodeURIComponent(feature.id)}/delivery" role="button" class="secondary">Open delivery workbench</a></article>`).join('')}</div>`;
+    } catch (error) { target.innerHTML = `<p class="failure-detail">${escapeHtml(error.message)}</p>`; }
+}
+document.getElementById('feature-status-filter').addEventListener('change', loadFeatureLibrary);
+document.getElementById('refresh-feature-library').addEventListener('click', loadFeatureLibrary);
+loadFeatureLibrary();
+</script>
+{% endblock %}

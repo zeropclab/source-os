@@ -411,6 +411,11 @@ async def test_feature_definition_requires_validated_need_and_tracking_plan(clie
     assert body["need_issue_id"] == need_id
     assert body["status"] == "defined"
 
+    feature_library = await client.get("/api/features?status=defined&page=1&page_size=20")
+    assert feature_library.status_code == 200
+    assert feature_library.json()["total"] == 1
+    assert feature_library.json()["items"][0]["id"] == body["id"]
+
     delivery_workbench = await client.get(f"/api/delivery-records/features/{body['id']}/workbench")
     assert delivery_workbench.status_code == 200
     assert delivery_workbench.json()["feature_definition"]["id"] == body["id"]

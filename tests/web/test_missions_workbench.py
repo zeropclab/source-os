@@ -137,6 +137,14 @@ async def test_feature_definition_page_exposes_tracking_and_rollback_contract(cl
     assert '/api/need-issues/${value("need-id")}/features' in page
     assert "build authorization" in page
 
+    library = await client.get("/features")
+    assert library.status_code == 200
+    library_page = library.text
+    assert 'id="feature-library"' in library_page
+    assert 'id="feature-status-filter"' in library_page
+    assert "/api/features?page=1&page_size=100" in library_page
+    assert "Open delivery workbench" in library_page
+
 
 async def test_product_thesis_workbench_exposes_decision_controls(client):
     response = await client.get("/product-theses/11111111-1111-1111-1111-111111111111")
