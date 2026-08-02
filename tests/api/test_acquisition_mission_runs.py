@@ -13,7 +13,13 @@ from packages.adapters.github_mission import (
 
 
 async def _create_github_mission(
-    client, *, request_limit=3, retry_limit=1, timeout_seconds=10, item_limit=20
+    client,
+    *,
+    request_limit=3,
+    retry_limit=1,
+    timeout_seconds=10,
+    item_limit=20,
+    page_limit=2,
 ):
     source_response = await client.post(
         "/api/sources",
@@ -38,7 +44,7 @@ async def _create_github_mission(
                 "retry_limit": retry_limit,
             },
             "pagination_context_rules": {
-                "page_limit": 2,
+                "page_limit": page_limit,
                 "include_replies": True,
                 "require_parent_context": True,
             },
@@ -652,7 +658,7 @@ async def test_uncollected_next_page_is_an_honest_partial_result(client):
             page = await super().list_issues(owner, repo, query_terms)
             return GitHubPage(items=page.items, page=1, has_next_page=True)
 
-    mission, _ = await _create_github_mission(client)
+    mission, _ = await _create_github_mission(client, page_limit=1)
     app.dependency_overrides[get_github_live_transport] = lambda: PaginatedTransport(
         scenario="issue_with_context"
     )
@@ -672,6 +678,63 @@ async def test_uncollected_next_page_is_an_honest_partial_result(client):
         artifact for artifact in run["raw_artifacts"] if artifact["kind"] == "issue_page"
     )
     assert issue_page["raw"]["has_next_page"] is True
+
+
+async def test_configured_page_limit_collects_second_page_before_marking_run_complete(client):
+    class TwoPageTransport:
+        transport_requests = 0
+        network_requests = 0
+
+        async def list_issues(self, owner, repo, query_terms, page=1):
+            self.transport_requests += 1
+            issues = {
+                1: {
+                    "number": 1,
+                    "title": "First page workflow failure",
+                    "body": "A production workflow needs manual recovery.",
+                    "html_url": f"https://github.com/{owner}/{repo}/issues/1",
+                    "created_at": "2026-08-01T08:00:00+00:00",
+                },
+                2: {
+                    "number": 2,
+                    "title": "Second page independent workaround",
+                    "body": "A different operator documents the workaround cost.",
+                    "html_url": f"https://github.com/{owner}/{repo}/issues/2",
+                    "created_at": "2026-08-02T08:00:00+00:00",
+                },
+            }
+            return GitHubPage(items=[issues[page]], page=page, has_next_page=page == 1)
+
+        async def list_issue_comments(self, owner, repo, issue_number):
+            self.transport_requests += 1
+            return GitHubPage(items=[], page=1, has_next_page=False)
+
+    mission, _ = await _create_github_mission(client, request_limit=5, item_limit=10)
+    app.dependency_overrides[get_github_live_transport] = lambda: TwoPageTransport()
+
+    created = await client.post(
+        f"/api/acquisition-missions/{mission['id']}/runs",
+        json={"execution_mode": "live"},
+    )
+
+    assert created.status_code == 201
+    run = created.json()
+    assert run["terminal_state"] == "succeeded", run["failure_detail"]
+    assert run["context_completeness"]["pagination_complete"] is True
+    assert run["transport_requests"] == 4
+    assert len(run["external_signal_ids"]) == 2
+    issue_pages = [
+        artifact for artifact in run["raw_artifacts"] if artifact["kind"] == "issue_page"
+    ]
+    assert [page["raw"]["page"] for page in issue_pages] == [1, 2]
+
+    replay_response = await client.post(f"/api/acquisition-mission-runs/{run['id']}/replay")
+
+    assert replay_response.status_code == 201
+    replay = replay_response.json()
+    assert replay["terminal_state"] == "succeeded"
+    assert replay["external_signal_ids"] == run["external_signal_ids"]
+    assert replay["network_requests"] == 0
 
 
 async def test_time_budget_cancels_hanging_transport_and_persists_failed_run(client):
