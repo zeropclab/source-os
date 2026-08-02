@@ -14,6 +14,7 @@
         <option value="website">Website (List Page)</option>
         <option value="youtube">YouTube Channel</option>
         <option value="podcast">Podcast</option>
+        <option value="github">GitHub Issues</option>
     </select>
 
     <label for="source_type">Source Type</label>
@@ -22,6 +23,7 @@
         <option value="website_list">Website List</option>
         <option value="youtube_channel">YouTube Channel</option>
         <option value="podcast">Podcast</option>
+        <option value="issues">GitHub Issues</option>
     </select>
 
     <label for="url">URL</label>
@@ -64,7 +66,7 @@
 <script>
 function updateSourceType() {
     const platform = document.getElementById('platform').value;
-    const typeMap = {rss:'rss_feed', website:'website_list', youtube:'youtube_channel', podcast:'podcast'};
+    const typeMap = {rss:'rss_feed', website:'website_list', youtube:'youtube_channel', podcast:'podcast', github:'issues'};
     document.getElementById('source_type').value = typeMap[platform];
 }
 
@@ -77,7 +79,7 @@ document.getElementById('source-form').addEventListener('submit', async (e) => {
         url: document.getElementById('url').value,
         monitor_policy: {
             frequency: document.getElementById('frequency').value,
-            method: document.getElementById('platform').value === 'rss' ? 'rss_poll' : 'list_page'
+            method: ({rss:'rss_poll', github:'github_rest'}[document.getElementById('platform').value] || 'list_page')
         },
         fetch_policy: {
             preferred_strategy: document.getElementById('preferred_strategy').value,

@@ -173,7 +173,7 @@ document.getElementById('mission-form').addEventListener('submit', async (event)
 
 function renderRun(run) {
     const context = run.context_completeness || {};
-    const gap = (context.missing_context || []).join(', ') || 'none reported';
+    const gap = (context.missing || []).join(', ') || 'none reported';
     document.getElementById('mission-result').innerHTML = `<article><p class="eyebrow">Mission run · ${escapeHtml(run.execution_mode)}</p><h2>${escapeHtml(run.terminal_state)}</h2><div class="run-metrics"><span>Transport requests <strong>${run.transport_requests}</strong></span><span>Network requests <strong>${run.network_requests}</strong></span><span>Retries <strong>${run.retry_count}</strong></span><span>Raw artifacts <strong>${run.raw_artifacts.length}</strong></span><span>Evidence candidates <strong>${run.external_signal_ids.length}</strong></span></div><p><strong>Context gaps:</strong> ${escapeHtml(gap)}</p><p><strong>Checkpoints:</strong> ${escapeHtml((run.checkpoints || []).join(' · '))}</p>${run.failure_detail ? `<p class="failure-detail"><strong>Failure detail:</strong> ${escapeHtml(run.failure_detail)}</p>` : ''}</article>`;
 }
 

@@ -17,3 +17,14 @@ async def test_missions_workbench_exposes_an_explicit_bounded_mission_flow(clien
     assert "/api/acquisition-missions" in page
     assert "/api/evidence-inbox" in page
     assert '["succeeded", "completed"].includes(run.terminal_state)' in page
+    assert "context.missing || []" in page
+
+
+async def test_source_creation_page_can_define_a_github_issue_source(client):
+    response = await client.get("/sources/create")
+
+    assert response.status_code == 200
+    page = response.text
+    assert '<option value="github">GitHub Issues</option>' in page
+    assert "github:'issues'" in page
+    assert "github_rest" in page
