@@ -44,7 +44,10 @@ async def run_pi_proposal(
         "payload": {
             "evidence_bundle_hash": evidence_bundle_hash,
             "task_instruction": task_instruction,
-            "citations": [entry["signal_id"] for entry in evidence_bundle],
+            "citations": [
+                str(entry.get("signal_id") or f"{entry.get('kind', 'evidence')}:{entry.get('id')}")
+                for entry in evidence_bundle
+            ],
             "evidence_bundle": evidence_bundle,
             "provider": provider,
             "model": model,
