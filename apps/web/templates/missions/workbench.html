@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+{% block title %}Mission Workbench{% endblock %}
+
+{% block content %}
+<header class="workbench-heading">
+    <div>
+        <p class="eyebrow">Evidence acquisition</p>
+        <h1>Mission Workbench</h1>
+        <p>把一个现实问题约束成可复核的采集任务。这里产出的是证据候选，不是已经成立的需求。</p>
+    </div>
+    <a href="/sources/create" role="button" class="secondary">Create source</a>
+</header>
+
+<div id="workbench-message" role="status" aria-live="polite"></div>
+
+<section class="workbench-grid">
+    <article>
+        <header><strong>1. Select an active source</strong></header>
+        <label for="source-id">Source</label>
+        <select id="source-id" required>
+            <option value="">Loading active sources…</option>
+        </select>
+        <small id="source-summary">Only an explicitly selected source can be configured or run.</small>
+    </article>
+
+    <article>
+        <header><strong>2. Pin a collection configuration</strong></header>
+        <p><small>A mission always records an immutable configuration version. Adjusting this form creates a new version; it never rewrites an old run.</small></p>
+        <form id="source-config-form">
+            <div class="grid">
+                <label>Access mode
+                    <select id="access-mode"><option value="public">Public</option><option value="rate_limited">Rate limited</option><option value="credentialed">Credentialed</option><option value="subscription">Subscription</option></select>
+                </label>
+                <label>Parser
+                    <input id="parser" value="github_issue" required>
+                </label>
+            </div>
+            <label>Query terms <small>(one per line)</small>
+                <textarea id="config-query-terms" rows="3" required>user pain
+workaround</textarea>
+            </label>
+            <div class="grid">
+                <label>Request limit<input id="request-limit" type="number" min="1" value="2" required></label>
+                <label>Timeout (seconds)<input id="timeout-seconds" type="number" min="1" value="15" required></label>
+                <label>Page limit<input id="page-limit" type="number" min="1" value="1" required></label>
+            </div>
+            <button type="submit" class="secondary">Create and pin config version</button>
+        </form>
+        <p id="pinned-config" class="config-status">No configuration version pinned.</p>
+    </article>
+</section>
+
+<article>
+    <header><strong>3. Define a bounded reality question</strong></header>
+    <form id="mission-form">
+        <div class="grid">
+            <label>Mission type
+                <select id="mission-type"><option value="targeted_evidence">Targeted evidence</option><option value="exploratory">Exploratory</option><option value="counterevidence">Counterevidence</option><option value="context_repair">Context repair</option></select>
+            </label>
+            <label>Target audience<input id="target-audience" value="independent developers" required></label>
+        </div>
+        <label>Reality question
+            <textarea id="reality-question" rows="2" required>What observable cost or repeated workaround is this audience describing?</textarea>
+        </label>
+        <div class="grid">
+            <label>Regions <small>(one per line)</small><textarea id="regions" rows="2" required>global</textarea></label>
+            <label>Languages <small>(one per line)</small><textarea id="languages" rows="2" required>en</textarea></label>
+            <label>Query seeds <small>(one per line)</small><textarea id="query-seeds" rows="2" required>user pain
+workaround</textarea></label>
+        </div>
+        <div class="grid">
+            <label>Time budget (minutes)<input id="time-budget" type="number" min="1" value="30" required></label>
+            <label>Item limit<input id="item-limit" type="number" min="1" value="20" required></label>
+            <label>Cost budget (cents)<input id="cost-budget" type="number" min="0" value="0" required></label>
+        </div>
+        <label>Stop conditions <small>(one per line; must say when evidence is enough)</small>
+            <textarea id="stop-conditions" rows="2" required>Collect independent observations with original context</textarea>
+        </label>
+        <button id="create-mission" type="submit" disabled>Create bounded mission</button>
+    </form>
+</article>
+
+<article id="execution-panel" hidden>
+    <header><strong>4. Execute explicitly</strong></header>
+    <div class="grid">
+        <label>Execution mode
+            <select id="execution-mode">
+                <option value="fixture">Fixture — deterministic, no external network</option>
+                <option value="live">Live — makes bounded public-source requests</option>
+            </select>
+        </label>
+        <div class="execution-warning"><strong>Live is never automatic.</strong><br><small>Select it deliberately; the pinned request limit and timeout still apply.</small></div>
+    </div>
+    <button id="run-mission" type="button">Run selected mode</button>
+</article>
+
+<section id="mission-result" aria-live="polite">
+    <p><em>No mission has been created in this session.</em></p>
+</section>
+
+<section>
+    <header class="section-heading"><div><p class="eyebrow">Candidate evidence</p><h2>Evidence Inbox</h2></div><button id="refresh-evidence" type="button" class="secondary outline">Refresh</button></header>
+    <p><small>Candidate evidence may be incomplete or misleading. It is not a validated demand and must be reviewed with its original material and lineage.</small></p>
+    <div id="evidence-inbox"><p>Loading Evidence Inbox…</p></div>
+</section>
+
+<script>
+const state = { source: null, config: null, mission: null, run: null };
+const lines = (id) => document.getElementById(id).value.split('\n').map((v) => v.trim()).filter(Boolean);
+const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+
+function message(text, kind = 'info') {
+    document.getElementById('workbench-message').innerHTML = `<article class="message-${kind}">${escapeHtml(text)}</article>`;
+}
+
+async function request(url, options = {}) {
+    const response = await fetch(url, options);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail || data));
+    return data;
+}
+
+async function loadSources() {
+    const data = await request('/api/sources?page_size=100');
+    const select = document.getElementById('source-id');
+    select.innerHTML = '<option value="">Select a source…</option>' + data.items.map((source) => `<option value="${source.id}">${escapeHtml(source.name)} · ${escapeHtml(source.platform)} · ${escapeHtml(source.source_type)}</option>`).join('');
+    if (!data.items.length) document.getElementById('source-summary').innerHTML = 'No active sources. <a href="/sources/create">Create a source first.</a>';
+}
+
+document.getElementById('source-id').addEventListener('change', (event) => {
+    state.source = event.target.value || null;
+    state.config = null;
+    document.getElementById('pinned-config').textContent = state.source ? 'Create a configuration version for this source.' : 'No configuration version pinned.';
+    document.getElementById('create-mission').disabled = true;
+});
+
+document.getElementById('source-config-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!state.source) return message('Select a source before creating a configuration.', 'error');
+    try {
+        const config = await request(`/api/sources/${state.source}/config-versions`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
+            access_mode: document.getElementById('access-mode').value,
+            query_scope: { query_terms: lines('config-query-terms'), filters: {}, exclusions: [] },
+            request_policy: { request_limit: Number(document.getElementById('request-limit').value), timeout_seconds: Number(document.getElementById('timeout-seconds').value), retry_limit: 0 },
+            pagination_context_rules: { page_limit: Number(document.getElementById('page-limit').value), include_replies: true, require_parent_context: true },
+            extraction_settings: { parser: document.getElementById('parser').value.trim(), parser_version: 'v1', content_fields: ['title', 'body', 'comments'] }
+        }) });
+        state.config = config;
+        document.getElementById('pinned-config').textContent = `Pinned v${config.version} · ${config.access_mode} · ${config.request_policy.request_limit} requests maximum`;
+        document.getElementById('create-mission').disabled = false;
+        message(`Configuration version v${config.version} is pinned.`, 'success');
+    } catch (error) { message(error.message, 'error'); }
+});
+
+document.getElementById('mission-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!state.source || !state.config) return message('Select a source and pin a configuration first.', 'error');
+    try {
+        const mission = await request('/api/acquisition-missions', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
+            source_id: state.source, source_config_version_id: state.config.id,
+            mission_type: document.getElementById('mission-type').value,
+            reality_question: document.getElementById('reality-question').value.trim(),
+            target_audience: document.getElementById('target-audience').value.trim(),
+            regions: lines('regions'), languages: lines('languages'), query_seeds: lines('query-seeds'),
+            time_budget_minutes: Number(document.getElementById('time-budget').value), item_limit: Number(document.getElementById('item-limit').value), cost_budget_cents: Number(document.getElementById('cost-budget').value), stop_conditions: lines('stop-conditions')
+        }) });
+        state.mission = mission;
+        document.getElementById('execution-panel').hidden = false;
+        document.getElementById('mission-result').innerHTML = `<article><p class="eyebrow">Mission draft</p><h2>${escapeHtml(mission.reality_question)}</h2><p>Config v${mission.source_config_version.version} is pinned. No collection has occurred yet.</p></article>`;
+        message('Bounded mission created. Choose an execution mode deliberately.', 'success');
+    } catch (error) { message(error.message, 'error'); }
+});
+
+function renderRun(run) {
+    const context = run.context_completeness || {};
+    const gap = (context.missing_context || []).join(', ') || 'none reported';
+    document.getElementById('mission-result').innerHTML = `<article><p class="eyebrow">Mission run · ${escapeHtml(run.execution_mode)}</p><h2>${escapeHtml(run.terminal_state)}</h2><div class="run-metrics"><span>Transport requests <strong>${run.transport_requests}</strong></span><span>Network requests <strong>${run.network_requests}</strong></span><span>Retries <strong>${run.retry_count}</strong></span><span>Raw artifacts <strong>${run.raw_artifacts.length}</strong></span><span>Evidence candidates <strong>${run.external_signal_ids.length}</strong></span></div><p><strong>Context gaps:</strong> ${escapeHtml(gap)}</p><p><strong>Checkpoints:</strong> ${escapeHtml((run.checkpoints || []).join(' · '))}</p>${run.failure_detail ? `<p class="failure-detail"><strong>Failure detail:</strong> ${escapeHtml(run.failure_detail)}</p>` : ''}</article>`;
+}
+
+document.getElementById('run-mission').addEventListener('click', async () => {
+    if (!state.mission) return;
+    const mode = document.getElementById('execution-mode').value;
+    try {
+        document.getElementById('run-mission').disabled = true;
+        const run = await request(`/api/acquisition-missions/${state.mission.id}/runs`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({execution_mode: mode}) });
+        state.run = run;
+        renderRun(run);
+        await loadEvidence();
+        message(`Mission completed with terminal state: ${run.terminal_state}.`, ["succeeded", "completed"].includes(run.terminal_state) ? 'success' : 'error');
+    } catch (error) { message(error.message, 'error'); }
+    finally { document.getElementById('run-mission').disabled = false; }
+});
+
+async function loadEvidence() {
+    try {
+        const data = await request('/api/evidence-inbox');
+        const visible = state.run ? data.items.filter((item) => state.run.external_signal_ids.includes(item.id)) : data.items;
+        const target = document.getElementById('evidence-inbox');
+        if (!visible.length) { target.innerHTML = '<p><em>No candidate evidence for this view.</em></p>'; return; }
+        target.innerHTML = `<div class="evidence-list">${visible.map((item) => `<article><header><strong>${escapeHtml(item.source_label)}</strong> <span class="badge">${escapeHtml(item.status)}</span></header><p>${escapeHtml(item.observation)}</p><details><summary>Original material and lineage</summary><p><a href="${escapeHtml(item.source_uri)}" target="_blank" rel="noreferrer">Open original material</a></p><p><strong>Lineage:</strong> ${escapeHtml(item.lineage_key)}</p><p><strong>Parent context:</strong> ${item.parent_context_available ? 'available' : 'missing / unknown'}</p></details></article>`).join('')}</div>`;
+    } catch (error) { document.getElementById('evidence-inbox').innerHTML = `<p class="failure-detail">Could not load evidence: ${escapeHtml(error.message)}</p>`; }
+}
+
+document.getElementById('refresh-evidence').addEventListener('click', loadEvidence);
+Promise.all([loadSources(), loadEvidence()]).catch((error) => message(error.message, 'error'));
+</script>
+{% endblock %}

@@ -2,7 +2,8 @@
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
-from ..main import templates
+
+from ..templating import templates
 
 router = APIRouter(prefix="/items", tags=["Web Items"])
 
@@ -14,4 +15,8 @@ async def item_list(request: Request):
 
 @router.get("/{item_id}", response_class=HTMLResponse)
 async def item_detail(request: Request, item_id: str):
-    return templates.TemplateResponse(request, "items/detail.html", {"item_id": item_id, "title": "Item Detail"})
+    return templates.TemplateResponse(
+        request,
+        "items/detail.html",
+        {"item_id": item_id, "title": "Item Detail"},
+    )
