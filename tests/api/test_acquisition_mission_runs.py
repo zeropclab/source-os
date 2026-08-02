@@ -12,7 +12,9 @@ from packages.adapters.github_mission import (
 )
 
 
-async def _create_github_mission(client, *, request_limit=3, retry_limit=1, timeout_seconds=10):
+async def _create_github_mission(
+    client, *, request_limit=3, retry_limit=1, timeout_seconds=10, item_limit=20
+):
     source_response = await client.post(
         "/api/sources",
         json={
@@ -62,7 +64,7 @@ async def _create_github_mission(client, *, request_limit=3, retry_limit=1, time
             "target_audience": "independent developers receiving payouts",
             "query_seeds": ["reconciliation", "payout"],
             "time_budget_minutes": 10,
-            "item_limit": 20,
+            "item_limit": item_limit,
             "cost_budget_cents": 0,
             "stop_conditions": ["Capture one issue with its comment context"],
         },
@@ -86,7 +88,7 @@ async def test_fixture_github_mission_preserves_raw_context_and_creates_traceabl
     run = created.json()
     assert run["mission_id"] == mission["id"]
     assert run["source_config_version_id"] == config["id"]
-    assert run["terminal_state"] == "succeeded"
+    assert run["terminal_state"] == "succeeded", run["failure_detail"]
     assert run["execution_mode"] == "fixture"
     assert run["budgets"] == {
         "request_limit": 3,
@@ -99,6 +101,13 @@ async def test_fixture_github_mission_preserves_raw_context_and_creates_traceabl
         "Where does payout reconciliation create observable work?"
     )
     assert run["input_snapshot"]["source_config_version"]["id"] == config["id"]
+    assert run["input_snapshot"]["source"] == {
+        "id": mission["source_id"],
+        "name": "GitHub payment reconciliation issues",
+        "platform": "github",
+        "source_type": "issues",
+        "url": "https://github.com/example/payments/issues",
+    }
     assert run["input_snapshot"]["source_config_version"]["query_scope"] == {
         "query_terms": ["reconciliation", "payout"],
         "filters": {},
@@ -225,6 +234,94 @@ async def test_live_issue_without_comments_remains_real_evidence_without_invente
     signal = inbox.json()["items"][0]
     assert "Plugin setup requires repeated manual mapping" in signal["observation"]
     assert "three hours" not in signal["observation"]
+
+
+async def test_one_page_with_multiple_issues_and_comments_emits_every_bounded_signal(client):
+    class MultipleItemsTransport:
+        transport_requests = 0
+        network_requests = 0
+
+        async def list_issues(self, owner, repo, query_terms):
+            self.transport_requests += 1
+            return GitHubPage(
+                items=[
+                    {
+                        "number": number,
+                        "title": f"Repeated workflow {number}",
+                        "body": f"Manual step {number} repeats every day.",
+                        "html_url": f"https://github.com/{owner}/{repo}/issues/{number}",
+                        "created_at": f"2026-07-0{number}T08:00:00+00:00",
+                    }
+                    for number in (1, 2)
+                ],
+                page=1,
+                has_next_page=False,
+            )
+
+        async def list_issue_comments(self, owner, repo, issue_number):
+            self.transport_requests += 1
+            return GitHubPage(
+                items=[
+                    {
+                        "id": 100 + issue_number,
+                        "body": f"Comment context {issue_number}",
+                        "html_url": (
+                            f"https://github.com/{owner}/{repo}/issues/{issue_number}"
+                            f"#issuecomment-{100 + issue_number}"
+                        ),
+                        "created_at": f"2026-08-0{issue_number}T08:00:00+00:00",
+                    }
+                ],
+                page=1,
+                has_next_page=False,
+            )
+
+    mission, _ = await _create_github_mission(client, request_limit=5, item_limit=10)
+    app.dependency_overrides[get_github_live_transport] = lambda: MultipleItemsTransport()
+
+    created = await client.post(
+        f"/api/acquisition-missions/{mission['id']}/runs",
+        json={"execution_mode": "live"},
+    )
+
+    assert created.status_code == 201
+    run = created.json()
+    assert run["terminal_state"] == "succeeded", run["failure_detail"]
+    assert run["transport_requests"] == 3
+    assert len(run["external_signal_ids"]) == 4
+    assert [artifact["kind"] for artifact in run["raw_artifacts"]] == [
+        "issue_page",
+        "issue",
+        "comment_page",
+        "comment",
+        "issue",
+        "comment_page",
+        "comment",
+    ]
+
+
+async def test_invalid_timestamp_is_a_visible_parsing_failure(client):
+    class InvalidTimestampTransport(GitHubFixtureTransport):
+        async def list_issues(self, owner, repo, query_terms):
+            page = await super().list_issues(owner, repo, query_terms)
+            page.items[0]["created_at"] = "not-a-timestamp"
+            return page
+
+    mission, _ = await _create_github_mission(client)
+    app.dependency_overrides[get_github_live_transport] = lambda: InvalidTimestampTransport(
+        scenario="issue_with_context"
+    )
+
+    created = await client.post(
+        f"/api/acquisition-missions/{mission['id']}/runs",
+        json={"execution_mode": "live"},
+    )
+
+    assert created.status_code == 201
+    run = created.json()
+    assert run["terminal_state"] == "failed"
+    assert run["failure_detail"] == "GitHub issue parser rejected invalid field values."
+    assert run["checkpoints"][-1] == "issue:42:parse_failed"
 
 
 async def test_missing_parent_context_is_a_partial_run_and_visible_on_the_signal(client):
@@ -452,6 +549,29 @@ async def test_fixture_replay_reuses_lineage_without_transport_or_duplicate_sign
         set(item["mission_run_ids"]) == {original["id"], replay["id"]}
         for item in inbox.json()["items"]
     )
+
+
+async def test_failed_rate_limited_run_replay_preserves_original_terminal_semantics(client):
+    mission, _ = await _create_github_mission(client)
+    app.dependency_overrides[get_github_mission_transport] = lambda: GitHubFixtureTransport(
+        scenario="rate_limited"
+    )
+    original_response = await client.post(
+        f"/api/acquisition-missions/{mission['id']}/runs",
+        json={"execution_mode": "fixture"},
+    )
+    original = original_response.json()
+
+    replay_response = await client.post(f"/api/acquisition-mission-runs/{original['id']}/replay")
+
+    assert replay_response.status_code == 201
+    replay = replay_response.json()
+    assert replay["terminal_state"] == "failed"
+    assert replay["failure_detail"] == original["failure_detail"]
+    assert replay["context_completeness"] == original["context_completeness"]
+    assert replay["external_signal_ids"] == []
+    assert replay["network_requests"] == 0
+    assert replay["checkpoints"][-1] == "replay:lineage_verified"
 
 
 async def test_repeated_mission_run_reuses_existing_business_lineage(client):

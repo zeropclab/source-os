@@ -57,10 +57,20 @@ async def _get_mission_or_404(db: AsyncSession, mission_id: uuid.UUID) -> Acquis
     return mission
 
 
-def _input_snapshot(mission: AcquisitionMission) -> dict:
+def _input_snapshot(mission: AcquisitionMission, source: Source) -> dict:
     mission_data = AcquisitionMissionResponse.model_validate(mission).model_dump(mode="json")
     config_data = mission_data.pop("source_config_version")
-    return {"mission": mission_data, "source_config_version": config_data}
+    return {
+        "mission": mission_data,
+        "source": {
+            "id": str(source.id),
+            "name": source.name,
+            "platform": source.platform,
+            "source_type": source.source_type,
+            "url": source.url,
+        },
+        "source_config_version": config_data,
+    }
 
 
 async def _persist_signal_drafts(
@@ -146,9 +156,10 @@ async def create_acquisition_mission_run(
     try:
         async with asyncio.timeout(timeout_seconds):
             result = await GitHubMissionAdapter().collect(
-                source,
+                source.url,
                 config,
                 bounded_transport,
+                item_limit=mission.item_limit,
             )
     except TimeoutError:
         result = GitHubMissionResult(
@@ -171,7 +182,7 @@ async def create_acquisition_mission_run(
         source_config_version_id=config.id,
         replay_of_run_id=None,
         execution_mode=body.execution_mode,
-        input_snapshot=_input_snapshot(mission),
+        input_snapshot=_input_snapshot(mission, source),
         budgets={
             "request_limit": config.request_policy["request_limit"],
             "time_limit_seconds": config.request_policy["timeout_seconds"],
@@ -212,13 +223,11 @@ async def replay_acquisition_mission_run(
     if original is None:
         raise HTTPException(status_code=404, detail="Acquisition Mission run not found")
     mission = await _get_mission_or_404(db, original.mission_id)
-    source = await db.get(Source, mission.source_id)
-    if source is None:
-        raise HTTPException(status_code=404, detail="Source not found")
     replay_result = await GitHubMissionAdapter().collect(
-        source,
+        original.input_snapshot["source"]["url"],
         mission.source_config_version,
         GitHubArtifactReplayTransport(copy.deepcopy(original.raw_artifacts)),
+        item_limit=original.input_snapshot["mission"]["item_limit"],
     )
     original_signal_rows = await db.scalars(
         select(ExternalSignal).where(
@@ -238,12 +247,12 @@ async def replay_acquisition_mission_run(
         budgets=copy.deepcopy(original.budgets),
         raw_artifacts=copy.deepcopy(original.raw_artifacts),
         parser_version=original.parser_version,
-        context_completeness=replay_result.context_completeness.as_dict(),
-        checkpoints=[*replay_result.checkpoints, "replay:lineage_verified"],
-        retry_count=replay_result.retry_count,
-        terminal_state=(replay_result.terminal_state if lineage_verified else "failed"),
+        context_completeness=copy.deepcopy(original.context_completeness),
+        checkpoints=[*copy.deepcopy(original.checkpoints), "replay:lineage_verified"],
+        retry_count=original.retry_count,
+        terminal_state=(original.terminal_state if lineage_verified else "failed"),
         failure_detail=(
-            replay_result.failure_detail
+            original.failure_detail
             if lineage_verified
             else "Replay lineage diverged from the original mission run."
         ),

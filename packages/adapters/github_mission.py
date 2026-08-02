@@ -1,7 +1,9 @@
 """Parse bounded GitHub pages into raw artifacts and traceable evidence signals."""
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
+from functools import partial
 from urllib.parse import urlparse
 
 from packages.adapters.github_transport import (
@@ -15,7 +17,6 @@ from packages.adapters.github_transport import (
     GitHubRequestBudgetExceededError,
     GitHubTransportError,
 )
-from packages.storage.models.source import Source
 from packages.storage.models.source_config_version import SourceConfigVersion
 
 __all__ = [
@@ -77,8 +78,18 @@ class GitHubMissionResult:
     failure_detail: str | None
 
 
-def _repository_coordinates(source: Source) -> tuple[str, str]:
-    parsed = urlparse(source.url)
+@dataclass(frozen=True)
+class PageFetchOutcome:
+    page: GitHubPage | None
+    raw_artifacts: list[dict]
+    checkpoints: list[str]
+    retry_count: int
+    error_kind: str | None = None
+    error_detail: str | None = None
+
+
+def _repository_coordinates(source_url: str) -> tuple[str, str]:
+    parsed = urlparse(source_url)
     parts = [part for part in parsed.path.split("/") if part]
     if parsed.hostname != "github.com" or len(parts) < 2:
         raise ValueError("GitHub source URL must identify an owner and repository")
@@ -99,6 +110,68 @@ def _transport_failure_artifact(
         "source_uri": f"https://api.github.com/repos/{owner}/{repo}/issues",
         "raw": {"status": status, "attempt": attempt, "detail": detail},
     }
+
+
+async def _fetch_page(
+    call: Callable[[], Awaitable[GitHubPage]],
+    *,
+    owner: str,
+    repo: str,
+    stage: str,
+    retry_limit: int,
+) -> PageFetchOutcome:
+    artifacts: list[dict] = []
+    checkpoints: list[str] = []
+    for attempt in range(1, retry_limit + 2):
+        try:
+            return PageFetchOutcome(await call(), artifacts, checkpoints, attempt - 1)
+        except GitHubRateLimitError:
+            checkpoints.append(f"{stage}:attempt:{attempt}:rate_limited")
+            artifacts.append(
+                _transport_failure_artifact(
+                    owner=owner,
+                    repo=repo,
+                    stage=stage,
+                    attempt=attempt,
+                    status=429,
+                    detail="rate_limited",
+                )
+            )
+        except GitHubRequestBudgetExceededError:
+            checkpoint = (
+                f"{stage}:attempt:{attempt}:budget_exhausted"
+                if stage == "issues"
+                else f"{stage}:budget_exhausted"
+            )
+            checkpoints.append(checkpoint)
+            return PageFetchOutcome(
+                None,
+                artifacts,
+                checkpoints,
+                max(0, attempt - 1),
+                "budget_exhausted",
+            )
+        except GitHubTransportError as exc:
+            checkpoints.append(f"{stage}:attempt:{attempt}:transport_failed")
+            artifacts.append(
+                _transport_failure_artifact(
+                    owner=owner,
+                    repo=repo,
+                    stage=stage,
+                    attempt=attempt,
+                    status=exc.status_code,
+                    detail=exc.detail,
+                )
+            )
+            return PageFetchOutcome(
+                None,
+                artifacts,
+                checkpoints,
+                max(0, attempt - 1),
+                "transport_failed",
+                exc.detail,
+            )
+    return PageFetchOutcome(None, artifacts, checkpoints, retry_limit, "rate_limited")
 
 
 def _issue_page_artifact(owner: str, repo: str, page: GitHubPage) -> dict:
@@ -130,352 +203,360 @@ def _comment_page_artifact(
     }
 
 
-def _terminal_outcome(
-    *, parent_available: bool, pagination_complete: bool
-) -> tuple[str, str | None, tuple[str, ...]]:
-    missing = []
-    details = []
-    if not parent_available:
-        missing.append("issue_parent")
-        details.append("Parent issue context was unavailable.")
-    if not pagination_complete:
-        missing.append("additional_pages")
-        details.append("Additional GitHub pages remain outside this bounded run.")
-    if missing:
-        return "partial", " ".join(details), tuple(missing)
-    return "succeeded", None, ()
+def _missing_field(payload: dict, fields: tuple[str, ...]) -> str | None:
+    return next((field for field in fields if field not in payload), None)
+
+
+def _append_unique(values: list[str], value: str) -> None:
+    if value not in values:
+        values.append(value)
+
+
+def _result(
+    *,
+    raw_artifacts: list[dict],
+    signals: list[SignalDraft],
+    checkpoints: list[str],
+    retry_count: int,
+    issue_complete: bool,
+    comments_complete: bool,
+    parent_complete: bool,
+    pagination_complete: bool,
+    missing: list[str],
+    terminal_state: str,
+    failure_detail: str | None,
+) -> GitHubMissionResult:
+    return GitHubMissionResult(
+        raw_artifacts=raw_artifacts,
+        signals=signals,
+        context_completeness=ContextCompleteness(
+            issue_complete,
+            comments_complete,
+            parent_complete,
+            pagination_complete,
+            tuple(missing),
+        ),
+        checkpoints=checkpoints,
+        retry_count=retry_count,
+        terminal_state=terminal_state,
+        failure_detail=failure_detail,
+    )
 
 
 class GitHubMissionAdapter:
     async def collect(
         self,
-        source: Source,
+        source_url: str,
         config: SourceConfigVersion,
         transport: GitHubMissionTransport,
+        *,
+        item_limit: int,
     ) -> GitHubMissionResult:
-        owner, repo = _repository_coordinates(source)
+        owner, repo = _repository_coordinates(source_url)
         retry_limit = config.request_policy.get("retry_limit", 0)
-        raw_artifacts: list[dict] = []
-        checkpoints: list[str] = []
-
-        issue_page: GitHubPage | None = None
-        issue_retries = 0
-        for attempt in range(1, retry_limit + 2):
-            try:
-                issue_page = await transport.list_issues(
-                    owner, repo, config.query_scope["query_terms"]
-                )
-                issue_retries = attempt - 1
-                break
-            except GitHubRateLimitError:
-                checkpoints.append(f"issues:attempt:{attempt}:rate_limited")
-                raw_artifacts.append(
-                    _transport_failure_artifact(
-                        owner=owner,
-                        repo=repo,
-                        stage="issues",
-                        attempt=attempt,
-                        status=429,
-                        detail="rate_limited",
-                    )
-                )
-            except GitHubRequestBudgetExceededError:
-                checkpoints.append(f"issues:attempt:{attempt}:budget_exhausted")
-                return GitHubMissionResult(
-                    raw_artifacts=raw_artifacts,
-                    signals=[],
-                    context_completeness=ContextCompleteness(
-                        False,
-                        False,
-                        False,
-                        False,
-                        ("issue_page", "comments", "parent_context"),
-                    ),
-                    checkpoints=checkpoints,
-                    retry_count=max(0, attempt - 1),
-                    terminal_state="failed",
-                    failure_detail="Request budget exhausted while retrying GitHub issues.",
-                )
-            except GitHubTransportError as exc:
-                checkpoints.append(f"issues:attempt:{attempt}:transport_failed")
-                raw_artifacts.append(
-                    _transport_failure_artifact(
-                        owner=owner,
-                        repo=repo,
-                        stage="issues",
-                        attempt=attempt,
-                        status=exc.status_code,
-                        detail=exc.detail,
-                    )
-                )
-                return GitHubMissionResult(
-                    raw_artifacts=raw_artifacts,
-                    signals=[],
-                    context_completeness=ContextCompleteness(
-                        False,
-                        False,
-                        False,
-                        False,
-                        ("issue_page", "comments", "parent_context"),
-                    ),
-                    checkpoints=checkpoints,
-                    retry_count=max(0, attempt - 1),
-                    terminal_state="failed",
-                    failure_detail=exc.detail,
-                )
-
-        if issue_page is None:
-            return GitHubMissionResult(
+        issue_fetch = await _fetch_page(
+            lambda: transport.list_issues(owner, repo, config.query_scope["query_terms"]),
+            owner=owner,
+            repo=repo,
+            stage="issues",
+            retry_limit=retry_limit,
+        )
+        raw_artifacts = list(issue_fetch.raw_artifacts)
+        checkpoints = list(issue_fetch.checkpoints)
+        retry_count = issue_fetch.retry_count
+        if issue_fetch.page is None:
+            error_messages: dict[str, str] = {
+                "budget_exhausted": "Request budget exhausted while retrying GitHub issues.",
+                "rate_limited": (f"GitHub rate limit persisted after {retry_limit} retry."),
+            }
+            detail = error_messages.get(
+                issue_fetch.error_kind or "",
+                issue_fetch.error_detail or "GitHub issue transport failed.",
+            )
+            return _result(
                 raw_artifacts=raw_artifacts,
                 signals=[],
-                context_completeness=ContextCompleteness(
-                    False,
-                    False,
-                    False,
-                    False,
-                    ("issue_page", "comments", "parent_context"),
-                ),
                 checkpoints=checkpoints,
-                retry_count=retry_limit,
+                retry_count=retry_count,
+                issue_complete=False,
+                comments_complete=False,
+                parent_complete=False,
+                pagination_complete=False,
+                missing=["issue_page", "comments", "parent_context"],
                 terminal_state="failed",
-                failure_detail=f"GitHub rate limit persisted after {retry_limit} retry.",
+                failure_detail=detail,
             )
 
+        issue_page = issue_fetch.page
         raw_artifacts.append(_issue_page_artifact(owner, repo, issue_page))
         checkpoints.append(f"issues:page:{issue_page.page}")
         if not issue_page.items:
-            return GitHubMissionResult(
+            return _result(
                 raw_artifacts=raw_artifacts,
                 signals=[],
-                context_completeness=ContextCompleteness(
-                    False,
-                    False,
-                    False,
-                    not issue_page.has_next_page,
-                    ("matching_issues",),
-                ),
                 checkpoints=checkpoints,
-                retry_count=issue_retries,
+                retry_count=retry_count,
+                issue_complete=False,
+                comments_complete=False,
+                parent_complete=False,
+                pagination_complete=not issue_page.has_next_page,
+                missing=["matching_issues"],
                 terminal_state="empty",
                 failure_detail="No GitHub issues matched the pinned query.",
             )
 
-        issue = issue_page.items[0]
-        required_issue_fields = ["number", "title", "body", "html_url", "created_at"]
-        missing_issue_field = next(
-            (field for field in required_issue_fields if field not in issue), None
-        )
-        if missing_issue_field is not None:
-            checkpoints.append(f"issues:page:{issue_page.page}:parse_failed")
-            return GitHubMissionResult(
-                raw_artifacts=raw_artifacts,
-                signals=[],
-                context_completeness=ContextCompleteness(
-                    False, False, False, not issue_page.has_next_page, ("parser_output",)
-                ),
-                checkpoints=checkpoints,
-                retry_count=issue_retries,
-                terminal_state="failed",
-                failure_detail=(
-                    f"GitHub issue parser could not read required field: {missing_issue_field}."
-                ),
-            )
+        signals: list[SignalDraft] = []
+        missing: list[str] = []
+        parent_complete = True
+        comments_complete = True
+        pagination_complete = not issue_page.has_next_page
+        if issue_page.has_next_page:
+            _append_unique(missing, "additional_pages")
 
-        issue_key = f"github:{owner}/{repo}:issue:{issue['number']}"
-        issue_artifact = {
-            "artifact_key": issue_key,
-            "kind": "issue",
-            "source_uri": issue["html_url"],
-            "raw": issue,
-        }
-        raw_artifacts.append(issue_artifact)
-        parent_available = issue.get("parent_available", True)
-        issue_context = {
-            "issue_number": issue["number"],
-            "pagination_complete": False,
-        }
-        issue_signal = None
-        if parent_available:
-            issue_context["issue_title"] = issue["title"]
-            issue_signal = SignalDraft(
-                lineage_key=issue_key,
-                raw_artifact_key=issue_key,
-                source_label=f"GitHub {owner}/{repo} issue #{issue['number']}",
-                source_uri=issue["html_url"],
-                original_material=(
-                    f"{issue['title']}\n\n{issue['body']}" if issue["body"] else issue["title"]
-                ),
-                observed_at=datetime.fromisoformat(issue["created_at"]),
-                observation=_evidence_observation("issue", issue["title"], issue["body"]),
-                parent_context_available=True,
-                context_snapshot=issue_context,
-            )
-        else:
-            issue_context["missing"] = ["issue_parent"]
-
-        comment_page: GitHubPage | None = None
-        comment_retries = 0
-        for attempt in range(1, retry_limit + 2):
-            try:
-                comment_page = await transport.list_issue_comments(owner, repo, issue["number"])
-                comment_retries = attempt - 1
+        for issue in issue_page.items:
+            if len(signals) >= item_limit:
+                _append_unique(missing, "item_limit")
+                pagination_complete = False
                 break
-            except GitHubRateLimitError:
-                checkpoints.append(
-                    f"issue:{issue['number']}:comments:attempt:{attempt}:rate_limited"
-                )
-                raw_artifacts.append(
-                    _transport_failure_artifact(
-                        owner=owner,
-                        repo=repo,
-                        stage=f"issue:{issue['number']}:comments",
-                        attempt=attempt,
-                        status=429,
-                        detail="rate_limited",
-                    )
-                )
-            except GitHubRequestBudgetExceededError:
-                checkpoints.append(f"issue:{issue['number']}:comments:budget_exhausted")
-                return GitHubMissionResult(
-                    raw_artifacts=raw_artifacts,
-                    signals=[] if issue_signal is None else [issue_signal],
-                    context_completeness=ContextCompleteness(
-                        parent_available,
-                        False,
-                        parent_available,
-                        False,
-                        ("comments",),
-                    ),
-                    checkpoints=checkpoints,
-                    retry_count=issue_retries + max(0, attempt - 1),
-                    terminal_state="partial",
-                    failure_detail=(
-                        "Request budget exhausted before comment context was collected."
-                    ),
-                )
-            except GitHubTransportError as exc:
-                checkpoints.append(
-                    f"issue:{issue['number']}:comments:attempt:{attempt}:transport_failed"
-                )
-                raw_artifacts.append(
-                    _transport_failure_artifact(
-                        owner=owner,
-                        repo=repo,
-                        stage=f"issue:{issue['number']}:comments",
-                        attempt=attempt,
-                        status=exc.status_code,
-                        detail=exc.detail,
-                    )
-                )
-                return GitHubMissionResult(
-                    raw_artifacts=raw_artifacts,
-                    signals=[] if issue_signal is None else [issue_signal],
-                    context_completeness=ContextCompleteness(
-                        parent_available,
-                        False,
-                        parent_available,
-                        False,
-                        ("comments",),
-                    ),
-                    checkpoints=checkpoints,
-                    retry_count=issue_retries + max(0, attempt - 1),
-                    terminal_state="partial",
-                    failure_detail=exc.detail,
-                )
-
-        if comment_page is None:
-            return GitHubMissionResult(
-                raw_artifacts=raw_artifacts,
-                signals=[] if issue_signal is None else [issue_signal],
-                context_completeness=ContextCompleteness(
-                    parent_available,
-                    False,
-                    parent_available,
-                    False,
-                    ("comments",),
-                ),
-                checkpoints=checkpoints,
-                retry_count=issue_retries + retry_limit,
-                terminal_state="partial",
-                failure_detail=(f"GitHub comment rate limit persisted after {retry_limit} retry."),
+            missing_field = _missing_field(
+                issue, ("number", "title", "body", "html_url", "created_at")
             )
-
-        raw_artifacts.append(
-            _comment_page_artifact(owner, repo, issue["number"], issue_key, comment_page)
-        )
-        checkpoints.append(f"issue:{issue['number']}:comments:page:{comment_page.page}")
-        pagination_complete = not issue_page.has_next_page and not comment_page.has_next_page
-        issue_context["pagination_complete"] = pagination_complete
-        terminal_state, failure_detail, missing = _terminal_outcome(
-            parent_available=parent_available,
-            pagination_complete=pagination_complete,
-        )
-        signals = [] if issue_signal is None else [issue_signal]
-
-        if comment_page.items:
-            comment = comment_page.items[0]
-            required_comment_fields = ["id", "body", "html_url", "created_at"]
-            missing_comment_field = next(
-                (field for field in required_comment_fields if field not in comment), None
-            )
-            if missing_comment_field is not None:
-                checkpoints.append(
-                    f"issue:{issue['number']}:comments:page:{comment_page.page}:parse_failed"
-                )
-                return GitHubMissionResult(
+            if missing_field is not None:
+                checkpoints.append(f"issues:page:{issue_page.page}:parse_failed")
+                return _result(
                     raw_artifacts=raw_artifacts,
                     signals=signals,
-                    context_completeness=ContextCompleteness(
-                        parent_available,
-                        False,
-                        parent_available,
-                        pagination_complete,
-                        ("comment_parser_output",),
-                    ),
                     checkpoints=checkpoints,
-                    retry_count=issue_retries + comment_retries,
-                    terminal_state="partial",
+                    retry_count=retry_count,
+                    issue_complete=parent_complete and bool(signals),
+                    comments_complete=False,
+                    parent_complete=parent_complete,
+                    pagination_complete=False,
+                    missing=["parser_output"],
+                    terminal_state="partial" if signals else "failed",
                     failure_detail=(
-                        "GitHub comment parser could not read required field: "
-                        f"{missing_comment_field}."
+                        f"GitHub issue parser could not read required field: {missing_field}."
                     ),
                 )
-            comment_key = f"github:{owner}/{repo}:comment:{comment['id']}"
+            try:
+                issue_number = int(issue["number"])
+                issue_title = issue["title"]
+                issue_body = issue["body"]
+                issue_url = issue["html_url"]
+                observed_at = datetime.fromisoformat(issue["created_at"])
+                if not isinstance(issue_title, str) or not isinstance(issue_url, str):
+                    raise TypeError
+                if issue_body is not None and not isinstance(issue_body, str):
+                    raise TypeError
+            except (TypeError, ValueError):
+                checkpoints.append(f"issue:{issue.get('number', 'unknown')}:parse_failed")
+                return _result(
+                    raw_artifacts=raw_artifacts,
+                    signals=signals,
+                    checkpoints=checkpoints,
+                    retry_count=retry_count,
+                    issue_complete=parent_complete and bool(signals),
+                    comments_complete=False,
+                    parent_complete=parent_complete,
+                    pagination_complete=False,
+                    missing=["parser_output"],
+                    terminal_state="partial" if signals else "failed",
+                    failure_detail="GitHub issue parser rejected invalid field values.",
+                )
+
+            issue_key = f"github:{owner}/{repo}:issue:{issue_number}"
             raw_artifacts.append(
                 {
-                    "artifact_key": comment_key,
-                    "kind": "comment",
-                    "source_uri": comment["html_url"],
-                    "raw": comment,
-                    "parent_artifact_key": issue_key,
+                    "artifact_key": issue_key,
+                    "kind": "issue",
+                    "source_uri": issue_url,
+                    "raw": issue,
                 }
             )
-            signals.append(
-                SignalDraft(
-                    lineage_key=comment_key,
-                    raw_artifact_key=comment_key,
-                    source_label=(f"GitHub {owner}/{repo} issue #{issue['number']} comment"),
-                    source_uri=comment["html_url"],
-                    original_material=comment["body"],
-                    observed_at=datetime.fromisoformat(comment["created_at"]),
-                    observation=_evidence_observation("comment", comment["body"]),
-                    parent_context_available=parent_available,
-                    context_snapshot=issue_context,
+            parent_available = bool(issue.get("parent_available", True))
+            issue_context: dict = {
+                "issue_number": issue_number,
+                "pagination_complete": False,
+            }
+            if parent_available:
+                issue_context["issue_title"] = issue_title
+                signals.append(
+                    SignalDraft(
+                        lineage_key=issue_key,
+                        raw_artifact_key=issue_key,
+                        source_label=f"GitHub {owner}/{repo} issue #{issue_number}",
+                        source_uri=issue_url,
+                        original_material=(
+                            f"{issue_title}\n\n{issue_body}" if issue_body else issue_title
+                        ),
+                        observed_at=observed_at,
+                        observation=_evidence_observation("issue", issue_title, issue_body),
+                        parent_context_available=True,
+                        context_snapshot=issue_context,
+                    )
                 )
+            else:
+                parent_complete = False
+                _append_unique(missing, "issue_parent")
+                issue_context["missing"] = ["issue_parent"]
+
+            comment_stage = f"issue:{issue_number}:comments"
+            comment_fetch = await _fetch_page(
+                partial(transport.list_issue_comments, owner, repo, issue_number),
+                owner=owner,
+                repo=repo,
+                stage=comment_stage,
+                retry_limit=retry_limit,
+            )
+            raw_artifacts.extend(comment_fetch.raw_artifacts)
+            checkpoints.extend(comment_fetch.checkpoints)
+            retry_count += comment_fetch.retry_count
+            if comment_fetch.page is None:
+                comments_complete = False
+                pagination_complete = False
+                _append_unique(missing, "comments")
+                error_messages = {
+                    "budget_exhausted": (
+                        "Request budget exhausted before comment context was collected."
+                    ),
+                    "rate_limited": (
+                        f"GitHub comment rate limit persisted after {retry_limit} retry."
+                    ),
+                }
+                detail = error_messages.get(
+                    comment_fetch.error_kind or "",
+                    comment_fetch.error_detail or "GitHub comment transport failed.",
+                )
+                return _result(
+                    raw_artifacts=raw_artifacts,
+                    signals=signals,
+                    checkpoints=checkpoints,
+                    retry_count=retry_count,
+                    issue_complete=parent_complete and bool(signals),
+                    comments_complete=False,
+                    parent_complete=parent_complete,
+                    pagination_complete=False,
+                    missing=missing,
+                    terminal_state="partial",
+                    failure_detail=detail,
+                )
+
+            comment_page = comment_fetch.page
+            raw_artifacts.append(
+                _comment_page_artifact(owner, repo, issue_number, issue_key, comment_page)
+            )
+            checkpoints.append(f"issue:{issue_number}:comments:page:{comment_page.page}")
+            if comment_page.has_next_page:
+                pagination_complete = False
+                _append_unique(missing, "additional_pages")
+            issue_context["pagination_complete"] = (
+                not issue_page.has_next_page and not comment_page.has_next_page
             )
 
-        return GitHubMissionResult(
+            for comment in comment_page.items:
+                if len(signals) >= item_limit:
+                    pagination_complete = False
+                    _append_unique(missing, "item_limit")
+                    break
+                missing_field = _missing_field(comment, ("id", "body", "html_url", "created_at"))
+                if missing_field is not None:
+                    checkpoints.append(
+                        f"issue:{issue_number}:comments:page:{comment_page.page}:parse_failed"
+                    )
+                    return _result(
+                        raw_artifacts=raw_artifacts,
+                        signals=signals,
+                        checkpoints=checkpoints,
+                        retry_count=retry_count,
+                        issue_complete=parent_complete and bool(signals),
+                        comments_complete=False,
+                        parent_complete=parent_complete,
+                        pagination_complete=False,
+                        missing=["comment_parser_output"],
+                        terminal_state="partial",
+                        failure_detail=(
+                            f"GitHub comment parser could not read required field: {missing_field}."
+                        ),
+                    )
+                try:
+                    comment_id = int(comment["id"])
+                    comment_body = comment["body"]
+                    comment_url = comment["html_url"]
+                    comment_time = datetime.fromisoformat(comment["created_at"])
+                    if not isinstance(comment_body, str) or not isinstance(comment_url, str):
+                        raise TypeError
+                except (TypeError, ValueError):
+                    checkpoints.append(
+                        f"issue:{issue_number}:comments:page:{comment_page.page}:parse_failed"
+                    )
+                    return _result(
+                        raw_artifacts=raw_artifacts,
+                        signals=signals,
+                        checkpoints=checkpoints,
+                        retry_count=retry_count,
+                        issue_complete=parent_complete and bool(signals),
+                        comments_complete=False,
+                        parent_complete=parent_complete,
+                        pagination_complete=False,
+                        missing=["comment_parser_output"],
+                        terminal_state="partial",
+                        failure_detail=("GitHub comment parser rejected invalid field values."),
+                    )
+                comment_key = f"github:{owner}/{repo}:comment:{comment_id}"
+                raw_artifacts.append(
+                    {
+                        "artifact_key": comment_key,
+                        "kind": "comment",
+                        "source_uri": comment_url,
+                        "raw": comment,
+                        "parent_artifact_key": issue_key,
+                    }
+                )
+                signals.append(
+                    SignalDraft(
+                        lineage_key=comment_key,
+                        raw_artifact_key=comment_key,
+                        source_label=(f"GitHub {owner}/{repo} issue #{issue_number} comment"),
+                        source_uri=comment_url,
+                        original_material=comment_body,
+                        observed_at=comment_time,
+                        observation=_evidence_observation("comment", comment_body),
+                        parent_context_available=parent_available,
+                        context_snapshot=issue_context,
+                    )
+                )
+
+        if missing:
+            details = []
+            if "issue_parent" in missing:
+                details.append("Parent issue context was unavailable.")
+            if "additional_pages" in missing:
+                details.append("Additional GitHub pages remain outside this bounded run.")
+            if "item_limit" in missing:
+                details.append("Mission item limit left collected items unprocessed.")
+            return _result(
+                raw_artifacts=raw_artifacts,
+                signals=signals,
+                checkpoints=checkpoints,
+                retry_count=retry_count,
+                issue_complete=parent_complete and bool(signals),
+                comments_complete=comments_complete,
+                parent_complete=parent_complete,
+                pagination_complete=pagination_complete,
+                missing=missing,
+                terminal_state="partial",
+                failure_detail=" ".join(details),
+            )
+        return _result(
             raw_artifacts=raw_artifacts,
             signals=signals,
-            context_completeness=ContextCompleteness(
-                parent_available,
-                True,
-                parent_available,
-                pagination_complete,
-                missing,
-            ),
             checkpoints=checkpoints,
-            retry_count=issue_retries + comment_retries,
-            terminal_state=terminal_state,
-            failure_detail=failure_detail,
+            retry_count=retry_count,
+            issue_complete=True,
+            comments_complete=True,
+            parent_complete=True,
+            pagination_complete=True,
+            missing=[],
+            terminal_state="succeeded",
+            failure_detail=None,
         )
