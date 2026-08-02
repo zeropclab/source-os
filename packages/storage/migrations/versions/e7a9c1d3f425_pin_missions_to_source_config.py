@@ -19,12 +19,17 @@ def upgrade() -> None:
         "acquisition_missions",
         sa.Column("source_config_version_id", sa.UUID(), nullable=True),
     )
+    op.create_unique_constraint(
+        "uq_source_config_source_id_id",
+        "source_config_versions",
+        ["source_id", "id"],
+    )
     op.create_foreign_key(
-        "fk_acquisition_mission_source_config_version",
+        "fk_mission_config_belongs_to_source",
         "acquisition_missions",
         "source_config_versions",
-        ["source_config_version_id"],
-        ["id"],
+        ["source_id", "source_config_version_id"],
+        ["source_id", "id"],
         ondelete="RESTRICT",
     )
     op.execute(
@@ -41,8 +46,13 @@ def downgrade() -> None:
         type_="check",
     )
     op.drop_constraint(
-        "fk_acquisition_mission_source_config_version",
+        "fk_mission_config_belongs_to_source",
         "acquisition_missions",
         type_="foreignkey",
     )
     op.drop_column("acquisition_missions", "source_config_version_id")
+    op.drop_constraint(
+        "uq_source_config_source_id_id",
+        "source_config_versions",
+        type_="unique",
+    )

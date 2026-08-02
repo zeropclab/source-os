@@ -12,7 +12,10 @@ from ..database import Base
 
 class SourceConfigVersion(Base):
     __tablename__ = "source_config_versions"
-    __table_args__ = (UniqueConstraint("source_id", "version"),)
+    __table_args__ = (
+        UniqueConstraint("source_id", "version"),
+        UniqueConstraint("source_id", "id", name="uq_source_config_source_id_id"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     source_id: Mapped[uuid.UUID] = mapped_column(

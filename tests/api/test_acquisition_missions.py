@@ -28,6 +28,26 @@ async def _create_source_config(client, source_id, *, query_terms=None, access_m
     return response.json()
 
 
+def _mission_payload(source_id, config_id=None, **overrides):
+    payload = {
+        "reality_question": "What observable cost does reconciliation create?",
+        "mission_type": "targeted_evidence",
+        "source_id": str(source_id),
+        "regions": ["ID"],
+        "languages": ["id"],
+        "target_audience": "freelancers",
+        "query_seeds": ["invoice mismatch"],
+        "time_budget_minutes": 45,
+        "item_limit": 50,
+        "cost_budget_cents": 2000,
+        "stop_conditions": ["Collect 12 independent observations"],
+    }
+    if config_id is not None:
+        payload["source_config_version_id"] = config_id
+    payload.update(overrides)
+    return payload
+
+
 async def test_operator_can_create_and_retrieve_a_bounded_draft_mission(client, db):
     source = await create_source(
         db,
@@ -37,23 +57,17 @@ async def test_operator_can_create_and_retrieve_a_bounded_draft_mission(client, 
         url="https://github.com/example/public-project/issues",
     )
     pinned_config = await _create_source_config(client, source.id)
-    payload = {
-        "reality_question": (
+    payload = _mission_payload(
+        source.id,
+        pinned_config["id"],
+        reality_question=(
             "Do Indonesian freelancers incur observable reconciliation costs "
             "when receiving cross-border payments?"
         ),
-        "mission_type": "targeted_evidence",
-        "source_id": str(source.id),
-        "source_config_version_id": pinned_config["id"],
-        "regions": ["ID"],
-        "languages": ["id"],
-        "target_audience": "freelancers and micro-exporters",
-        "query_seeds": ["invoice mismatch", "biaya transfer"],
-        "time_budget_minutes": 45,
-        "item_limit": 50,
-        "cost_budget_cents": 2000,
-        "stop_conditions": ["Collect 12 independent observations with behavior or cost"],
-    }
+        target_audience="freelancers and micro-exporters",
+        query_seeds=["invoice mismatch", "biaya transfer"],
+        stop_conditions=["Collect 12 independent observations with behavior or cost"],
+    )
 
     created = await client.post("/api/acquisition-missions", json=payload)
 
@@ -95,20 +109,7 @@ async def test_operator_cannot_pin_a_mission_to_an_unusable_config(client, db, a
 
     response = await client.post(
         "/api/acquisition-missions",
-        json={
-            "reality_question": "What observable cost does reconciliation create?",
-            "mission_type": "targeted_evidence",
-            "source_id": str(source.id),
-            "source_config_version_id": config["id"],
-            "regions": ["ID"],
-            "languages": ["id"],
-            "target_audience": "freelancers",
-            "query_seeds": ["invoice mismatch"],
-            "time_budget_minutes": 45,
-            "item_limit": 50,
-            "cost_budget_cents": 2000,
-            "stop_conditions": ["Collect 12 independent observations"],
-        },
+        json=_mission_payload(source.id, config["id"]),
     )
 
     assert response.status_code == 422
@@ -136,20 +137,7 @@ async def test_operator_cannot_pin_a_config_from_a_different_source(client, db):
 
     response = await client.post(
         "/api/acquisition-missions",
-        json={
-            "reality_question": "What observable cost does reconciliation create?",
-            "mission_type": "targeted_evidence",
-            "source_id": str(selected_source.id),
-            "source_config_version_id": other_config["id"],
-            "regions": ["ID"],
-            "languages": ["id"],
-            "target_audience": "freelancers",
-            "query_seeds": ["invoice mismatch"],
-            "time_budget_minutes": 45,
-            "item_limit": 50,
-            "cost_budget_cents": 2000,
-            "stop_conditions": ["Collect 12 independent observations"],
-        },
+        json=_mission_payload(selected_source.id, other_config["id"]),
     )
 
     assert response.status_code == 422
@@ -169,19 +157,7 @@ async def test_operator_must_select_a_source_config_version(client, db):
 
     response = await client.post(
         "/api/acquisition-missions",
-        json={
-            "reality_question": "What observable cost does reconciliation create?",
-            "mission_type": "targeted_evidence",
-            "source_id": str(source.id),
-            "regions": ["ID"],
-            "languages": ["id"],
-            "target_audience": "freelancers",
-            "query_seeds": ["invoice mismatch"],
-            "time_budget_minutes": 45,
-            "item_limit": 50,
-            "cost_budget_cents": 2000,
-            "stop_conditions": ["Collect 12 independent observations"],
-        },
+        json=_mission_payload(source.id),
     )
 
     assert response.status_code == 422
@@ -200,20 +176,7 @@ async def test_operator_cannot_create_a_mission_without_a_stop_condition(client,
 
     response = await client.post(
         "/api/acquisition-missions",
-        json={
-            "reality_question": "What observable cost does reconciliation create?",
-            "mission_type": "targeted_evidence",
-            "source_id": str(source.id),
-            "source_config_version_id": config["id"],
-            "regions": ["ID"],
-            "languages": ["id"],
-            "target_audience": "freelancers",
-            "query_seeds": ["invoice mismatch"],
-            "time_budget_minutes": 45,
-            "item_limit": 50,
-            "cost_budget_cents": 2000,
-            "stop_conditions": [],
-        },
+        json=_mission_payload(source.id, config["id"], stop_conditions=[]),
     )
 
     assert response.status_code == 422
@@ -231,20 +194,7 @@ async def test_operator_cannot_use_blank_text_as_a_stop_condition(client, db):
 
     response = await client.post(
         "/api/acquisition-missions",
-        json={
-            "reality_question": "What observable cost does reconciliation create?",
-            "mission_type": "targeted_evidence",
-            "source_id": str(source.id),
-            "source_config_version_id": config["id"],
-            "regions": ["ID"],
-            "languages": ["id"],
-            "target_audience": "freelancers",
-            "query_seeds": ["invoice mismatch"],
-            "time_budget_minutes": 45,
-            "item_limit": 50,
-            "cost_budget_cents": 2000,
-            "stop_conditions": ["   "],
-        },
+        json=_mission_payload(source.id, config["id"], stop_conditions=["   "]),
     )
 
     assert response.status_code == 422

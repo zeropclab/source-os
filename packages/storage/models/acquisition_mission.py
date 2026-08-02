@@ -3,7 +3,16 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Integer,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -13,6 +22,12 @@ from ..database import Base
 class AcquisitionMission(Base):
     __tablename__ = "acquisition_missions"
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["source_id", "source_config_version_id"],
+            ["source_config_versions.source_id", "source_config_versions.id"],
+            name="fk_mission_config_belongs_to_source",
+            ondelete="RESTRICT",
+        ),
         CheckConstraint(
             "source_config_version_id IS NOT NULL",
             name="ck_acquisition_mission_config_pin_required",
@@ -25,7 +40,6 @@ class AcquisitionMission(Base):
     )
     source_config_version_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("source_config_versions.id", ondelete="RESTRICT"),
         nullable=True,
     )
     reality_question: Mapped[str] = mapped_column(Text, nullable=False)
@@ -46,4 +60,4 @@ class AcquisitionMission(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
-    source_config_version = relationship("SourceConfigVersion", lazy="joined")
+    source_config_version = relationship("SourceConfigVersion", lazy="raise")

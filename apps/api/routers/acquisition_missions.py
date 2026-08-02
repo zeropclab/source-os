@@ -19,6 +19,14 @@ from packages.storage.models.source_config_version import SourceConfigVersion
 router = APIRouter()
 
 
+def _mission_with_pinned_config(mission_id: uuid.UUID):
+    return (
+        select(AcquisitionMission)
+        .options(joinedload(AcquisitionMission.source_config_version))
+        .where(AcquisitionMission.id == mission_id)
+    )
+
+
 @router.post("", response_model=AcquisitionMissionResponse, status_code=201)
 async def create_acquisition_mission(
     body: AcquisitionMissionCreate,
@@ -52,8 +60,7 @@ async def create_acquisition_mission(
     )
     db.add(mission)
     await db.commit()
-    await db.refresh(mission)
-    return mission
+    return await db.scalar(_mission_with_pinned_config(mission.id))
 
 
 @router.get("/{mission_id}", response_model=AcquisitionMissionResponse)
@@ -61,12 +68,7 @@ async def get_acquisition_mission(
     mission_id: uuid.UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    result = await db.execute(
-        select(AcquisitionMission)
-        .options(joinedload(AcquisitionMission.source_config_version))
-        .where(AcquisitionMission.id == mission_id)
-    )
-    mission = result.scalar_one_or_none()
+    mission = await db.scalar(_mission_with_pinned_config(mission_id))
     if mission is None:
         raise HTTPException(status_code=404, detail="Acquisition Mission not found")
     return mission
