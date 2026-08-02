@@ -197,8 +197,22 @@ async function loadEvidence() {
         const visible = state.run ? data.items.filter((item) => state.run.external_signal_ids.includes(item.id)) : data.items;
         const target = document.getElementById('evidence-inbox');
         if (!visible.length) { target.innerHTML = '<p><em>No candidate evidence for this view.</em></p>'; return; }
-        target.innerHTML = `<div class="evidence-list">${visible.map((item) => `<article><header><strong>${escapeHtml(item.source_label)}</strong> <span class="badge">${escapeHtml(item.status)}</span></header><p>${escapeHtml(item.observation)}</p><details><summary>Original material and lineage</summary><p><a href="${escapeHtml(item.source_uri)}" target="_blank" rel="noreferrer">Open original material</a></p><p><strong>Lineage:</strong> ${escapeHtml(item.lineage_key)}</p><p><strong>Parent context:</strong> ${item.parent_context_available ? 'available' : 'missing / unknown'}</p></details></article>`).join('')}</div>`;
+        target.innerHTML = `<div class="evidence-list">${visible.map((item) => `<article><header><strong>${escapeHtml(item.source_label)}</strong> <span class="badge">${escapeHtml(item.status)}</span></header><p>${escapeHtml(item.observation)}</p><details><summary>Original material and lineage</summary><p><a href="${escapeHtml(item.source_uri)}" target="_blank" rel="noreferrer">Open original material</a></p><p><strong>Lineage:</strong> ${escapeHtml(item.lineage_key)}</p><p><strong>Parent context:</strong> ${item.parent_context_available ? 'available' : 'missing / unknown'}</p></details><label>Decision reason<textarea id="triage-reason-${item.id}" rows="2" required placeholder="State the observed fact or uncertainty behind this decision."></textarea></label><div class="triage-actions"><button type="button" class="secondary" onclick="triageSignal('${item.id}', 'accepted')">Accept as evidence</button><button type="button" class="secondary outline" onclick="triageSignal('${item.id}', 'ignored')">Ignore</button><button type="button" class="contrast outline" onclick="triageSignal('${item.id}', 'flagged')">Flag for review</button></div></article>`).join('')}</div>`;
     } catch (error) { document.getElementById('evidence-inbox').innerHTML = `<p class="failure-detail">Could not load evidence: ${escapeHtml(error.message)}</p>`; }
+}
+
+async function triageSignal(signalId, status) {
+    const reason = document.getElementById(`triage-reason-${signalId}`).value.trim();
+    if (!reason) return message('A decision reason is required before triaging evidence.', 'error');
+    try {
+        await request(`/api/external-signals/${signalId}/triage`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({status, reason})
+        });
+        message(`Evidence marked ${status}. The original material and audit trail remain available.`, 'success');
+        await loadEvidence();
+    } catch (error) { message(error.message, 'error'); }
 }
 
 document.getElementById('refresh-evidence').addEventListener('click', loadEvidence);

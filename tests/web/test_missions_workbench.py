@@ -16,6 +16,11 @@ async def test_missions_workbench_exposes_an_explicit_bounded_mission_flow(clien
     assert 'id="evidence-inbox"' in page
     assert "/api/acquisition-missions" in page
     assert "/api/evidence-inbox" in page
+    assert "function triageSignal" in page
+    assert "Accept as evidence" in page
+    assert "Ignore" in page
+    assert "Flag for review" in page
+    assert "/api/external-signals/${signalId}/triage" in page
     assert '["succeeded", "completed"].includes(run.terminal_state)' in page
     assert "context.missing || []" in page
 
