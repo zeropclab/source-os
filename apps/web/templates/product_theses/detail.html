@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+
+{% block title %}Decide Product Thesis{% endblock %}
+
+{% block content %}
+<header class="workbench-heading">
+    <div>
+        <p class="eyebrow">Build decision</p>
+        <h1>Product Thesis Workbench</h1>
+        <p>
+            Record observations, make an explicit decision, then authorize a bounded build.
+            Stored observations are not market proof.
+        </p>
+    </div>
+</header>
+
+<div id="product-thesis-message" role="status" aria-live="polite"></div>
+<article id="product-thesis-detail"><p>Loading Product Thesis…</p></article>
+
+<section class="workbench-grid">
+    <article>
+        <header><strong>Record observation</strong></header>
+        <form id="thesis-observation-form">
+            <label>Kind
+                <select id="observation-kind">
+                    <option value="quote">Quote</option><option value="purchase">Purchase</option>
+                    <option value="refusal">Refusal</option><option value="refund">Refund</option>
+                    <option value="delivery_effort">Delivery effort</option><option value="direct_cost">Direct cost</option>
+                </select>
+            </label>
+            <label>Observation<textarea id="observation-text" required></textarea></label>
+            <div class="grid">
+                <label>Amount cents <input id="observation-amount" type="number" min="0"></label>
+                <label>Operator minutes <input id="observation-minutes" type="number" min="0"></label>
+            </div>
+            <button type="submit">Record observation</button>
+        </form>
+    </article>
+
+    <article>
+        <header><strong>Make decision</strong></header>
+        <form id="thesis-decision-form">
+            <label>Decision<select id="thesis-decision"><option value="continue">Continue</option><option value="change">Change</option><option value="stop">Stop</option></select></label>
+            <label>Rationale<textarea id="decision-rationale" required></textarea></label>
+            <button type="submit" class="secondary">Record decision</button>
+        </form>
+    </article>
+
+    <article>
+        <header><strong>Authorize build</strong></header>
+        <form id="build-authorization-form">
+            <label>Why this bounded build is authorized<textarea id="authorization-rationale" required></textarea></label>
+            <button type="submit" class="contrast">Record build authorization</button>
+        </form>
+    </article>
+</section>
+
+<script>
+    const thesisId = '{{ thesis_id }}';
+    const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", "\"": "&quot;" }[character]));
+    const message = (text, kind = "success") => { document.getElementById("product-thesis-message").innerHTML = `<article class="message-${kind}">${escapeHtml(text)}</article>`; };
+    async function request(url, options = {}) {
+        const response = await fetch(url, options);
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : JSON.stringify(data));
+        return data;
+    }
+    const optionalNumber = (id) => { const value = document.getElementById(id).value; return value === "" ? null : Number(value); };
+    async function loadWorkbench() {
+        try {
+            const workbench = await request(`/api/product-theses/${thesisId}/workbench`);
+            const thesis = workbench.product_thesis;
+            const observations = workbench.observations.map((item) => `<li><strong>${escapeHtml(item.kind)}</strong>: ${escapeHtml(item.observation)}</li>`).join("") || "<li>No observations recorded.</li>";
+            const gaps = workbench.gaps.map((item) => `<li>${escapeHtml(item)}</li>`).join("") || "<li>No workflow gaps reported.</li>";
+            const authorization = workbench.build_authorization ? `<p><strong>Build authorized:</strong> ${escapeHtml(workbench.build_authorization.rationale)}. <a href="/features/create?need=${encodeURIComponent(thesis.need_issue_id)}&thesis=${encodeURIComponent(thesis.id)}">Define Feature</a></p>` : "<p>No build authorization recorded.</p>";
+            document.getElementById("product-thesis-detail").innerHTML = `<header><strong>${escapeHtml(thesis.title)}</strong> <span class="badge">${escapeHtml(thesis.status)}</span></header><p><strong>User:</strong> ${escapeHtml(thesis.user)} · <strong>Payer:</strong> ${escapeHtml(thesis.payer)}</p><p><strong>Offer:</strong> ${escapeHtml(thesis.promised_outcome)}</p><p><strong>Decision:</strong> ${escapeHtml(thesis.decision || "not decided")}</p><h3>Observations</h3><ul>${observations}</ul><h3>Workflow gaps</h3><ul>${gaps}</ul>${authorization}`;
+        } catch (error) { document.getElementById("product-thesis-detail").innerHTML = `<p class="failure-detail">${escapeHtml(error.message)}</p>`; }
+    }
+    document.getElementById("thesis-observation-form").onsubmit = async (event) => { event.preventDefault(); try { await request(`/api/product-theses/${thesisId}/observations`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: document.getElementById("observation-kind").value, observation: document.getElementById("observation-text").value.trim(), amount_cents: optionalNumber("observation-amount"), operator_minutes: optionalNumber("observation-minutes") }) }); message("Observation recorded. It is not market proof by itself."); await loadWorkbench(); } catch (error) { message(error.message, "error"); } };
+    document.getElementById("thesis-decision-form").onsubmit = async (event) => { event.preventDefault(); try { await request(`/api/product-theses/${thesisId}/decision`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decision: document.getElementById("thesis-decision").value, rationale: document.getElementById("decision-rationale").value.trim() }) }); message("Decision recorded."); await loadWorkbench(); } catch (error) { message(error.message, "error"); } };
+    document.getElementById("build-authorization-form").onsubmit = async (event) => { event.preventDefault(); try { await request(`/api/product-theses/${thesisId}/build-authorization`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rationale: document.getElementById("authorization-rationale").value.trim() }) }); message("Build authorization recorded. Define only the bounded Feature next."); await loadWorkbench(); } catch (error) { message(error.message, "error"); } };
+    loadWorkbench();
+</script>
+{% endblock %}

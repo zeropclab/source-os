@@ -305,6 +305,12 @@ async def test_feature_definition_requires_validated_need_and_tracking_plan(clie
         },
     )
     thesis_id = thesis.json()["id"]
+    thesis_workbench = await client.get(f"/api/product-theses/{thesis_id}/workbench")
+    assert thesis_workbench.status_code == 200
+    assert thesis_workbench.json()["observations"] == []
+    assert any("record an observation" in gap for gap in thesis_workbench.json()["gaps"])
+    assert thesis_workbench.json()["build_authorization"] is None
+
     blocked_feature = await client.post(
         f"/api/need-issues/{need_id}/features",
         json={

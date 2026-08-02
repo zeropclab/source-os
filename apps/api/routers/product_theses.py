@@ -15,6 +15,7 @@ from apps.api.schemas.need_issue import (
     ProductThesisObservationCreate,
     ProductThesisObservationResponse,
     ProductThesisResponse,
+    ProductThesisWorkbenchResponse,
 )
 from packages.storage.models.need_issue import (
     BuildAuthorization,
@@ -30,6 +31,36 @@ async def _thesis_or_404(db: AsyncSession, thesis_id: uuid.UUID) -> ProductThesi
     if thesis is None:
         raise HTTPException(status_code=404, detail="Product Thesis not found")
     return thesis
+
+
+@router.get("/{thesis_id}/workbench", response_model=ProductThesisWorkbenchResponse)
+async def get_product_thesis_workbench(
+    thesis_id: uuid.UUID, db: Annotated[AsyncSession, Depends(get_db)]
+):
+    thesis = await _thesis_or_404(db, thesis_id)
+    observations = list(
+        await db.scalars(
+            select(ProductThesisObservation)
+            .where(ProductThesisObservation.product_thesis_id == thesis.id)
+            .order_by(ProductThesisObservation.created_at)
+        )
+    )
+    authorization = await db.scalar(
+        select(BuildAuthorization).where(BuildAuthorization.product_thesis_id == thesis.id)
+    )
+    gaps: list[str] = []
+    if not observations:
+        gaps.append("record an observation before making a Product Thesis decision")
+    if thesis.status != "decided":
+        gaps.append("record an explicit continue, change, or stop decision")
+    elif thesis.decision == "continue" and authorization is None:
+        gaps.append("record a build authorization before defining a Feature")
+    return {
+        "product_thesis": thesis,
+        "observations": observations,
+        "build_authorization": authorization,
+        "gaps": gaps,
+    }
 
 
 @router.post(

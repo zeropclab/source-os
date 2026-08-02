@@ -7,11 +7,21 @@ from ..templating import templates
 
 router = APIRouter(prefix="/needs", tags=["Web Needs"])
 feature_router = APIRouter(prefix="/features", tags=["Web Features"])
+product_thesis_router = APIRouter(prefix="/product-theses", tags=["Web Product Theses"])
 
 
 @feature_router.get("/create", response_class=HTMLResponse)
 async def create_feature_definition(request: Request):
     return templates.TemplateResponse(request, "features/create.html", {"title": "Define Feature"})
+
+
+@product_thesis_router.get("/{thesis_id}", response_class=HTMLResponse)
+async def product_thesis_workbench(request: Request, thesis_id: str):
+    return templates.TemplateResponse(
+        request,
+        "product_theses/detail.html",
+        {"title": "Decide Product Thesis", "thesis_id": thesis_id},
+    )
 
 
 @router.get("/create", response_class=HTMLResponse)
