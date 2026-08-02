@@ -44,6 +44,10 @@ async def test_dashboard_prioritizes_reality_action_and_objection_over_volume_me
     assert "/api/today" in page
     assert "Strongest objection" in page
     assert "Next reality action" in page
+    assert "Record an observation" in page
+    assert "Plan a bounded mission" in page
+    assert "Success Rate (24h)" not in page
+    assert "Items Collected" not in page
 
 
 async def test_manual_observation_workbench_imports_traceable_reality_signals(client):

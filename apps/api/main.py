@@ -45,7 +45,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="SourceOS API",
-    description="信源作业系统 — 多平台信源监测、采集、内容提取和知识导出",
+    description="证据驱动的现实需求发现与产品验证工作台",
     version="0.1.0",
     lifespan=lifespan,
 )
