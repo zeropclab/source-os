@@ -11,6 +11,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -22,6 +23,11 @@ from ..database import Base
 class AcquisitionMission(Base):
     __tablename__ = "acquisition_missions"
     __table_args__ = (
+        UniqueConstraint(
+            "id",
+            "source_config_version_id",
+            name="uq_mission_id_source_config_version_id",
+        ),
         ForeignKeyConstraint(
             ["source_id", "source_config_version_id"],
             ["source_config_versions.source_id", "source_config_versions.id"],

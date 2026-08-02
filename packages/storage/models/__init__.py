@@ -1,4 +1,6 @@
 from .acquisition_mission import AcquisitionMission
+from .acquisition_mission_run import AcquisitionMissionRun
+from .acquisition_mission_run_signal import AcquisitionMissionRunSignal
 from .comment import Comment
 from .content_version import ContentVersion
 from .external_signal import ExternalSignal, SignalTriageEvent
@@ -15,6 +17,8 @@ __all__ = [
     "SourceConfigVersion",
     "SourceProbeRun",
     "AcquisitionMission",
+    "AcquisitionMissionRun",
+    "AcquisitionMissionRunSignal",
     "SourceItem",
     "ContentVersion",
     "ExternalSignal",

@@ -32,12 +32,18 @@ class SignalTriageEventResponse(BaseModel):
 
 class ExternalSignalResponse(BaseModel):
     id: uuid.UUID
+    mission_run_id: uuid.UUID | None
+    mission_run_ids: list[uuid.UUID] = Field(default_factory=list)
+    lineage_key: str | None
+    raw_artifact_key: str | None
     source_label: str
     source_uri: str | None
     original_material: str
     observed_at: datetime
     observation: str
     interpretation: str | None
+    parent_context_available: bool | None
+    context_snapshot: dict | None
     status: str
     captured_at: datetime
     triage_events: list[SignalTriageEventResponse] = Field(default_factory=list)
