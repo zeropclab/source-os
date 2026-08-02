@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}Review Source Portfolio{% endblock %}
+
+{% block content %}
+<header class="workbench-heading">
+    <div>
+        <p class="eyebrow">Source calibration</p>
+        <h1>Source Portfolio</h1>
+        <p>
+            Record whether a source produced independently useful evidence at acceptable cost and
+            bias. An assessment does not prove coverage, representativeness, market size, or demand.
+        </p>
+    </div>
+</header>
+
+<div id="portfolio-message" role="status" aria-live="polite"></div>
+<section class="workbench-grid">
+    <article>
+        <header><strong>Record source assessment</strong></header>
+        <form id="source-portfolio-form">
+            <label>Source ID<input id="portfolio-source-id" required></label>
+            <div class="grid"><label>Region<input id="portfolio-region" required></label><label>Language<input id="portfolio-language" required></label></div>
+            <div class="grid"><label>Audience<input id="portfolio-audience" required></label><label>Evidence type<input id="portfolio-evidence-type" required></label></div>
+            <label>Portfolio mode<select id="portfolio-mode"><option value="exploration">Exploration</option><option value="exploitation">Exploitation</option></select></label>
+            <div class="grid"><label>Technical success rate<input id="portfolio-technical-rate" type="number" min="0" max="1" step="0.01" required></label><label>Context completeness rate<input id="portfolio-context-rate" type="number" min="0" max="1" step="0.01" required></label><label>Evidence usefulness rate<input id="portfolio-usefulness-rate" type="number" min="0" max="1" step="0.01" required></label></div>
+            <div class="grid"><label>Independent evidence count<input id="portfolio-independent-count" type="number" min="0" required></label><label>Counterevidence count<input id="portfolio-counterevidence-count" type="number" min="0" required></label><label>Estimated cost cents<input id="portfolio-cost" type="number" min="0" required></label></div>
+            <label>Downstream decision impact<textarea id="portfolio-decision-impact" required placeholder="What decision did this source actually change? Use 'none recorded' when unknown."></textarea></label>
+            <label>Rationale<textarea id="portfolio-rationale" required></textarea></label>
+            <button type="submit">Record assessment</button>
+        </form>
+    </article>
+    <article id="portfolio-summary"><p>Loading portfolio…</p></article>
+</section>
+
+<script>
+    const value = (id) => document.getElementById(id).value.trim();
+    const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", "\"": "&quot;" }[character]));
+    const message = (text, kind = "success") => { document.getElementById("portfolio-message").innerHTML = `<article class="message-${kind}">${escapeHtml(text)}</article>`; };
+    async function request(url, options = {}) { const response = await fetch(url, options); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : JSON.stringify(data)); return data; }
+    async function loadPortfolio() {
+        try {
+            const portfolio = await request("/api/source-portfolio");
+            const assessments = portfolio.assessments.map((item) => `<li><strong>${escapeHtml(item.region)} · ${escapeHtml(item.language)}</strong> · ${escapeHtml(item.portfolio_mode)} · action: ${escapeHtml(item.recommended_action)} · independent evidence: ${item.independent_evidence_count} · counterevidence: ${item.counterevidence_count} · impact: ${escapeHtml(item.downstream_decision_impact)}</li>`).join("") || "<li>No assessments recorded. This is not evidence that no sources are useful.</li>";
+            const coverage = Object.entries(portfolio.known_coverage).map(([name, values]) => `<li><strong>${escapeHtml(name)}:</strong> ${escapeHtml(values.join(", ") || "none assessed")}</li>`).join("");
+            document.getElementById("portfolio-summary").innerHTML = `<header><strong>Portfolio facts</strong></header><p>${escapeHtml(portfolio.coverage_warning)}</p><p><strong>Representativeness:</strong> ${escapeHtml(portfolio.representativeness)}</p><p><strong>Modes:</strong> exploration ${portfolio.mode_counts.exploration}, exploitation ${portfolio.mode_counts.exploitation}</p><h3>Known assessed dimensions</h3><ul>${coverage}</ul><h3>Assessments</h3><ul>${assessments}</ul>`;
+        } catch (error) { document.getElementById("portfolio-summary").innerHTML = `<p class="failure-detail">${escapeHtml(error.message)}</p>`; }
+    }
+    document.getElementById("source-portfolio-form").onsubmit = async (event) => { event.preventDefault(); try { const assessment = await request("/api/source-portfolio/assessments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source_id: value("portfolio-source-id"), region: value("portfolio-region"), language: value("portfolio-language"), audience: value("portfolio-audience"), evidence_type: value("portfolio-evidence-type"), portfolio_mode: document.getElementById("portfolio-mode").value, technical_success_rate: Number(value("portfolio-technical-rate")), context_completeness_rate: Number(value("portfolio-context-rate")), evidence_usefulness_rate: Number(value("portfolio-usefulness-rate")), independent_evidence_count: Number(value("portfolio-independent-count")), counterevidence_count: Number(value("portfolio-counterevidence-count")), estimated_cost_cents: Number(value("portfolio-cost")), downstream_decision_impact: value("portfolio-decision-impact"), rationale: value("portfolio-rationale") }) }); message(`Assessment recorded. Transparent recommendation: ${assessment.recommended_action}; it is not an automatic source change.`); await loadPortfolio(); } catch (error) { message(error.message, "error"); } };
+    loadPortfolio();
+</script>
+{% endblock %}

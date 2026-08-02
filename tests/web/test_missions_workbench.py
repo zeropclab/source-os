@@ -138,3 +138,16 @@ async def test_ontology_workbench_exposes_falsifiable_hypothesis_controls(client
     assert 'id="smallest-validation-action"' in page
     assert "/api/ontology-hypotheses" in page
     assert "not a validated Need" in page
+
+
+async def test_source_portfolio_workbench_exposes_decision_value_and_bias_controls(client):
+    response = await client.get("/portfolio")
+
+    assert response.status_code == 200
+    page = response.text
+    assert 'id="source-portfolio-form"' in page
+    assert 'id="portfolio-source-id"' in page
+    assert 'id="portfolio-counterevidence-count"' in page
+    assert 'id="portfolio-decision-impact"' in page
+    assert "/api/source-portfolio/assessments" in page
+    assert "does not prove coverage" in page
