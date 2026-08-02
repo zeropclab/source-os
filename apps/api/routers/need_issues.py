@@ -26,6 +26,7 @@ from apps.api.schemas.need_issue import (
 )
 from packages.storage.models.external_signal import ExternalSignal
 from packages.storage.models.need_issue import (
+    BuildAuthorization,
     FeatureDefinition,
     NeedChallenge,
     NeedEvidence,
@@ -343,6 +344,19 @@ async def create_feature_definition(
             detail=(
                 "Need Issue must be discovery-validated before a feature definition can be created"
             ),
+        )
+    thesis = await db.get(ProductThesis, body.product_thesis_id)
+    if thesis is None or thesis.need_issue_id != need_issue.id:
+        raise HTTPException(
+            status_code=422,
+            detail="Feature Definition must reference a Product Thesis for this Need Issue",
+        )
+    authorization = await db.scalar(
+        select(BuildAuthorization).where(BuildAuthorization.product_thesis_id == thesis.id)
+    )
+    if authorization is None:
+        raise HTTPException(
+            status_code=409, detail="Feature Definition requires a recorded build authorization"
         )
     feature = FeatureDefinition(need_issue_id=need_issue.id, **body.model_dump())
     need_issue.status = "feature-defined"
