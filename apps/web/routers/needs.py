@@ -24,3 +24,12 @@ async def need_validation_workbench(request: Request, need_issue_id: str):
         "needs/detail.html",
         {"title": "Validate Need Issue", "need_issue_id": need_issue_id},
     )
+
+
+@router.get("/experiments/{experiment_id}", response_class=HTMLResponse)
+async def experiment_decision_workbench(request: Request, experiment_id: str):
+    return templates.TemplateResponse(
+        request,
+        "needs/experiment.html",
+        {"title": "Run Validation Experiment", "experiment_id": experiment_id},
+    )
