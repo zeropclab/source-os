@@ -1,10 +1,13 @@
 """Behavior tests for running pinned missions into the Evidence Inbox."""
 
+from datetime import UTC, datetime, timedelta
+
 from apps.api.dependencies import (
     get_github_live_transport,
     get_github_mission_transport,
 )
 from apps.api.main import app
+from apps.worker.mission_runs import claim_next_mission_run, execute_claimed_mission_run
 from packages.adapters.github_mission import (
     GitHubFixtureTransport,
     GitHubPage,
@@ -114,7 +117,7 @@ async def test_queued_mission_run_is_controlled_before_any_collection(client):
     assert history.json()["items"][0]["lifecycle_status"] == "cancelled"
 
 
-async def test_queued_mission_run_collects_only_after_explicit_execute(client):
+async def test_explicit_execute_schedules_work_for_a_leased_worker(client, db):
     mission, _ = await _create_github_mission(client)
     app.dependency_overrides[get_github_mission_transport] = lambda: GitHubFixtureTransport(
         scenario="issue_with_context"
@@ -123,17 +126,53 @@ async def test_queued_mission_run_collects_only_after_explicit_execute(client):
         f"/api/acquisition-missions/{mission['id']}/queued-runs",
         json={"execution_mode": "fixture"},
     )
-    assert queued.status_code == 201
 
-    executed = await client.post(f"/api/acquisition-mission-runs/{queued.json()['id']}/execute")
+    scheduled = await client.post(f"/api/acquisition-mission-runs/{queued.json()['id']}/execute")
 
-    assert executed.status_code == 200
-    run = executed.json()
-    assert run["lifecycle_status"] == "completed"
-    assert run["terminal_state"] == "succeeded"
-    assert run["raw_artifacts"]
-    assert run["external_signal_ids"]
-    assert "run:started" in run["checkpoints"]
+    assert scheduled.status_code == 202
+    assert scheduled.json()["lifecycle_status"] == "scheduled"
+    assert scheduled.json()["raw_artifacts"] == []
+
+    claimed = await claim_next_mission_run(db, worker_id="test-worker", lease_seconds=60)
+    assert claimed is not None
+    assert str(claimed.id) == queued.json()["id"]
+    assert claimed.lifecycle_status == "running"
+    assert claimed.execution_attempt == 1
+
+    await execute_claimed_mission_run(
+        db,
+        run_id=claimed.id,
+        worker_id="test-worker",
+        fixture_transport=GitHubFixtureTransport(scenario="issue_with_context"),
+        live_transport=GitHubFixtureTransport(scenario="issue_with_context"),
+    )
+    completed = await client.get(f"/api/acquisition-mission-runs/{claimed.id}")
+    assert completed.status_code == 200
+    assert completed.json()["lifecycle_status"] == "completed"
+    assert completed.json()["external_signal_ids"]
+
+
+async def test_expired_worker_lease_is_reclaimed_without_duplicate_collection(client, db):
+    mission, _ = await _create_github_mission(client)
+    queued = await client.post(
+        f"/api/acquisition-missions/{mission['id']}/queued-runs",
+        json={"execution_mode": "fixture"},
+    )
+    await client.post(f"/api/acquisition-mission-runs/{queued.json()['id']}/execute")
+    start = datetime.now(UTC)
+
+    first_claim = await claim_next_mission_run(
+        db, worker_id="worker-a", lease_seconds=60, now=start
+    )
+    reclaimed = await claim_next_mission_run(
+        db, worker_id="worker-b", lease_seconds=60, now=start + timedelta(seconds=61)
+    )
+
+    assert first_claim is not None
+    assert reclaimed is not None
+    assert reclaimed.id == first_claim.id
+    assert reclaimed.execution_attempt == 2
+    assert "run:lease_reclaimed" in reclaimed.checkpoints
 
 
 async def test_fixture_github_mission_preserves_raw_context_and_creates_traceable_signals(client):

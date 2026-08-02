@@ -50,6 +50,13 @@ class AcquisitionMissionRun(Base):
         String(24), nullable=False, default="completed", server_default="completed"
     )
     control_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    execution_attempt: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    lease_owner: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     input_snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False)
     budgets: Mapped[dict] = mapped_column(JSONB, nullable=False)
     raw_artifacts: Mapped[list[dict]] = mapped_column(JSONB, nullable=False)

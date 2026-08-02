@@ -455,7 +455,7 @@ async def replay_acquisition_mission_run(
 
 async def _control_queued_run(
     run_id: uuid.UUID,
-    expected_status: str,
+    expected_statuses: tuple[str, ...],
     next_status: str,
     body: AcquisitionMissionRunControl,
     db: AsyncSession,
@@ -463,10 +463,13 @@ async def _control_queued_run(
     run = await db.get(AcquisitionMissionRun, run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="Acquisition Mission run not found")
-    if run.lifecycle_status != expected_status:
+    if run.lifecycle_status not in expected_statuses:
         raise HTTPException(
             status_code=409,
-            detail=f"Run is {run.lifecycle_status}; expected {expected_status} for this control",
+            detail=(
+                f"Run is {run.lifecycle_status}; expected "
+                f"{' or '.join(expected_statuses)} for this control"
+            ),
         )
     run.lifecycle_status = next_status
     run.control_reason = body.reason
@@ -486,7 +489,7 @@ async def pause_acquisition_mission_run(
     db: Annotated[AsyncSession, Depends(get_db)] = None,
 ):
     return await _control_queued_run(
-        run_id, "queued", "paused", body or AcquisitionMissionRunControl(), db
+        run_id, ("queued", "scheduled"), "paused", body or AcquisitionMissionRunControl(), db
     )
 
 
@@ -497,7 +500,7 @@ async def resume_acquisition_mission_run(
     db: Annotated[AsyncSession, Depends(get_db)] = None,
 ):
     return await _control_queued_run(
-        run_id, "paused", "queued", body or AcquisitionMissionRunControl(), db
+        run_id, ("paused",), "queued", body or AcquisitionMissionRunControl(), db
     )
 
 
@@ -508,18 +511,20 @@ async def cancel_acquisition_mission_run(
     db: Annotated[AsyncSession, Depends(get_db)] = None,
 ):
     return await _control_queued_run(
-        run_id, "queued", "cancelled", body or AcquisitionMissionRunControl(), db
+        run_id, ("queued", "scheduled"), "cancelled", body or AcquisitionMissionRunControl(), db
     )
 
 
-@read_router.post("/{run_id}/execute", response_model=AcquisitionMissionRunResponse)
+@read_router.post(
+    "/{run_id}/execute",
+    response_model=AcquisitionMissionRunResponse,
+    status_code=202,
+)
 async def execute_queued_acquisition_mission_run(
     run_id: uuid.UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
-    fixture_transport: Annotated[GitHubMissionTransport, Depends(get_github_mission_transport)],
-    live_transport: Annotated[GitHubMissionTransport, Depends(get_github_live_transport)],
 ):
-    """Explicitly execute one queued, pinned run from the workbench."""
+    """Hand an explicitly approved run to a durable worker; do not collect in the API process."""
     run = await db.get(AcquisitionMissionRun, run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="Acquisition Mission run not found")
@@ -528,39 +533,8 @@ async def execute_queued_acquisition_mission_run(
             status_code=409, detail=f"Run is {run.lifecycle_status}; expected queued"
         )
 
-    mission = await _get_mission_or_404(db, run.mission_id)
-    source = await db.get(Source, mission.source_id)
-    if source is None:
-        raise HTTPException(status_code=404, detail="Source not found")
-    config = mission.source_config_version
-    run.lifecycle_status = "running"
-    run.checkpoints = [*run.checkpoints, "run:started"]
-    await db.commit()
-
-    selected_transport = live_transport if run.execution_mode == "live" else fixture_transport
-    bounded_transport = BoundedGitHubMissionTransport(
-        selected_transport, request_limit=config.request_policy["request_limit"]
-    )
-    timeout_seconds = config.request_policy["timeout_seconds"]
-    try:
-        async with asyncio.timeout(timeout_seconds):
-            result = await GitHubMissionAdapter().collect(
-                source.url, config, bounded_transport, item_limit=mission.item_limit
-            )
-    except TimeoutError:
-        result = _failed_timeout_result(timeout_seconds)
-
-    run.raw_artifacts = result.raw_artifacts
-    run.context_completeness = result.context_completeness.as_dict()
-    run.checkpoints = [*run.checkpoints, *result.checkpoints]
-    run.retry_count = result.retry_count
-    run.terminal_state = result.terminal_state
-    run.failure_detail = result.failure_detail
-    run.transport_requests = bounded_transport.transport_requests
-    run.network_requests = bounded_transport.network_requests
-    run.lifecycle_status = "completed"
-    run.completed_at = func.now()
-    await _persist_signal_drafts(db, run, result.signals)
+    run.lifecycle_status = "scheduled"
+    run.checkpoints = [*run.checkpoints, "run:scheduled"]
     await db.commit()
     await db.refresh(run)
     return run

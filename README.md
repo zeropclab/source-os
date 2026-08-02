@@ -13,6 +13,8 @@ docker compose up -d
 uv sync --extra dev
 uv run alembic upgrade head
 uv run uvicorn apps.api.main:app --reload --host 127.0.0.1 --port 8000
+# In a second terminal: process explicitly scheduled Acquisition Missions.
+uv run sourceos-worker
 ```
 
 打开 `http://127.0.0.1:8000/`。
@@ -21,7 +23,7 @@ uv run uvicorn apps.api.main:app --reload --host 127.0.0.1 --port 8000
 
 ## 推荐的首次路径
 
-1. 在 **Observe** 手工录入一条访谈、销售对话、邮件或线下观察；或在 **Missions** 运行 fixture 采集任务。
+1. 在 **Observe** 手工录入一条访谈、销售对话、邮件或线下观察；或在 **Missions** 定义、入队并显式调度 fixture 采集任务。API 只调度，独立 worker 才会采集。
 2. 在 Evidence Inbox 分诊为接受、忽略或待复核；接受的信号才能创建 Need Issue。
 3. 在 Need 中同时记录支持证据、反证、未知项、挑战和最小验证行动。
 4. 仅在明确的建设授权后创建 Product Thesis 与 Feature。
@@ -34,6 +36,8 @@ uv run pytest -q
 ```
 
 测试会使用独立的 `sourceos_test` 数据库并在每个测试后清理表。fixture/synthetic 数据只验证产品机制，不能作为真实市场验证、用户付费、留存或盈利的证据。
+
+采集 worker 以数据库租约认领已调度任务；进程在认领后崩溃时，租约过期后可由另一个 worker 重新认领。可用 `uv run sourceos-worker --once` 验证一个轮询周期，不会让 API 请求本身执行采集。
 
 ## 边界
 
