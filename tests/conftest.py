@@ -1,19 +1,12 @@
 """Pytest fixtures for SourceOS tests."""
 
 import os
-from pathlib import Path
-
-# Load .env before any imports
-_project_root = Path(__file__).resolve().parent.parent
-from dotenv import load_dotenv
-
-load_dotenv(_project_root / ".env")
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from packages.storage.database import Base
+from packages.storage.database import Base, database_connection_params
 
 TEST_DB = os.getenv("DATABASE_URL", "").replace("sourceos", "sourceos_test")
 
@@ -22,14 +15,10 @@ async def _ensure_test_db():
     """Create test database if it doesn't exist."""
     import asyncpg
 
-    parts = TEST_DB.replace("postgresql+asyncpg://", "").split("@")
-    user = parts[0] or os.environ.get("USER", "postgres")
-    host_port = parts[1].split("/")
-    host = host_port[0].split(":")[0]
-    port = int(host_port[0].split(":")[1]) if ":" in host_port[0] else 5432
-    db_name = host_port[1]
+    params = database_connection_params(TEST_DB)
+    db_name = params.pop("database")
 
-    sys_conn = await asyncpg.connect(user=user, host=host, port=port, database="template1")
+    sys_conn = await asyncpg.connect(database="template1", **params)
     try:
         exists = await sys_conn.fetchval("SELECT 1 FROM pg_database WHERE datname = $1", db_name)
         if not exists:
@@ -66,8 +55,8 @@ async def db(engine):
 @pytest_asyncio.fixture(scope="function")
 async def client(db):
     """Async HTTP test client with database override."""
-    from apps.api.main import app
     from apps.api.dependencies import get_db
+    from apps.api.main import app
 
     async def override_get_db():
         yield db

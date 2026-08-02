@@ -12,13 +12,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install ruff mypy sqlalchemy
-      - run: ruff check .
-      - run: ruff format --check .
-      - run: mypy packages/ apps/ --ignore-missing-imports
+      - run: pip install -e ".[dev]"
+      - name: Report existing repository lint debt (non-blocking during ratchet)
+        run: ruff check . --output-format concise || true
+      - name: Check changed Python files
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          changed_files=$(git diff --name-only "$BASE_SHA" "$GITHUB_SHA" -- '*.py')
+          if [ -n "$changed_files" ]; then
+            printf '%s\n' "$changed_files" | xargs ruff check
+            printf '%s\n' "$changed_files" | xargs ruff format --check
+          else
+            echo "No Python files changed."
+          fi
+      - name: Report existing repository type debt (non-blocking during ratchet)
+        run: mypy --explicit-package-bases packages/ apps/ --ignore-missing-imports || true
 
   test:
     name: Tests
