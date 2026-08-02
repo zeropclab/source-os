@@ -4,6 +4,11 @@
 {% block content %}
 <h1>Dashboard</h1>
 
+<article id="today-workspace">
+    <header><strong>Today: reality-facing work</strong></header>
+    <p>Loading the current evidence, objection, and smallest next action…</p>
+</article>
+
 <div class="grid">
     <article>
         <h3>Sources</h3>
@@ -86,7 +91,27 @@ async function loadRecentItems() {
     }
 }
 
+async function loadTodayWorkspace() {
+    const container = document.getElementById('today-workspace');
+    try {
+        const response = await fetch('/api/today');
+        const today = await response.json();
+        const activeNeed = today.active_need
+            ? `<a href="/needs/${encodeURIComponent(today.active_need.id)}">${today.active_need.title}</a>`
+            : 'No active Need Issue';
+        container.innerHTML = `<header><strong>Today: reality-facing work</strong></header>
+            <p><strong>Next reality action:</strong> ${today.next_reality_action}</p>
+            <p><strong>Strongest objection:</strong> ${today.strongest_objection}</p>
+            <p><strong>Active Need:</strong> ${activeNeed}</p>
+            <p><strong>WIP:</strong> validations ${today.wip.validations.active}/${today.wip.validations.limit}; builds ${today.wip.builds_or_paid_pilots.active}/${today.wip.builds_or_paid_pilots.limit}</p>
+            <small>Recorded outcomes: ${today.recorded_outcomes}. Counts do not establish success.</small>`;
+    } catch (error) {
+        container.innerHTML = '<p class="failure-detail">Could not load today workspace.</p>';
+    }
+}
+
 loadStats();
 loadRecentItems();
+loadTodayWorkspace();
 </script>
 {% endblock %}

@@ -25,6 +25,17 @@ async def test_missions_workbench_exposes_an_explicit_bounded_mission_flow(clien
     assert "context.missing || []" in page
 
 
+async def test_dashboard_prioritizes_reality_action_and_objection_over_volume_metrics(client):
+    response = await client.get("/")
+
+    assert response.status_code == 200
+    page = response.text
+    assert 'id="today-workspace"' in page
+    assert "/api/today" in page
+    assert "Strongest objection" in page
+    assert "Next reality action" in page
+
+
 async def test_source_creation_page_can_define_a_github_issue_source(client):
     response = await client.get("/sources/create")
 
