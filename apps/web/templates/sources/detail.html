@@ -6,6 +6,10 @@
 
 <div id="source-info"><p>Loading...</p></div>
 
+<h2>Configuration History</h2>
+<p><small>Each version is immutable. A mission records the exact version it used; later configuration changes cannot rewrite past collection.</small></p>
+<div id="source-config-history"><p>Loading configuration history...</p></div>
+
 <h2>Items</h2>
 <div id="source-items"><p>Loading...</p></div>
 
@@ -28,6 +32,20 @@ async function loadSource() {
                 </table>
             </article>
         `;
+
+        const configsRes = await fetch('/api/sources/{{ source_id }}/config-versions');
+        const configsData = await configsRes.json();
+        const configsContainer = document.getElementById('source-config-history');
+        if (!configsRes.ok) throw new Error(configsData.detail || 'Could not load configuration history');
+        if (configsData.items.length === 0) {
+            configsContainer.innerHTML = '<p><em>No pinned configuration version yet. Create one from Mission Workbench before collecting.</em></p>';
+        } else {
+            let configsHtml = '<table><thead><tr><th>Version</th><th>Access</th><th>Query scope</th><th>Request budget</th><th>Context rules</th></tr></thead><tbody>';
+            for (const config of configsData.items) {
+                configsHtml += `<tr><td>v${config.version}</td><td>${config.access_mode}</td><td>${config.query_scope.query_terms.join(', ')}</td><td>${config.request_policy.request_limit} requests / ${config.request_policy.timeout_seconds}s</td><td>${config.pagination_context_rules.page_limit} pages · parent ${config.pagination_context_rules.require_parent_context ? 'required' : 'optional'}</td></tr>`;
+            }
+            configsContainer.innerHTML = configsHtml + '</tbody></table>';
+        }
 
         // Load items for this source
         const itemsRes = await fetch('/api/items?source_id={{ source_id }}&page_size=50');

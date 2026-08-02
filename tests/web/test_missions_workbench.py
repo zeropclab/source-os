@@ -68,6 +68,17 @@ async def test_source_creation_page_can_define_a_github_issue_source(client):
     assert "github_rest" in page
 
 
+async def test_source_detail_exposes_immutable_configuration_history(client):
+    response = await client.get("/sources/11111111-1111-1111-1111-111111111111")
+
+    assert response.status_code == 200
+    page = response.text
+    assert 'id="source-config-history"' in page
+    assert "/api/sources/11111111-1111-1111-1111-111111111111/config-versions" in page
+    assert "Configuration History" in page
+    assert "immutable" in page
+
+
 async def test_need_definition_page_requires_an_explicit_accepted_signal_handoff(client):
     response = await client.get("/needs/create?signal=11111111-1111-1111-1111-111111111111")
 
