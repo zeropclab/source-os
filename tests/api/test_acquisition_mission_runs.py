@@ -23,6 +23,7 @@ async def _create_github_mission(
     timeout_seconds=10,
     item_limit=20,
     page_limit=2,
+    time_budget_minutes=10,
 ):
     source_response = await client.post(
         "/api/sources",
@@ -72,7 +73,7 @@ async def _create_github_mission(
             "languages": ["en"],
             "target_audience": "independent developers receiving payouts",
             "query_seeds": ["reconciliation", "payout"],
-            "time_budget_minutes": 10,
+            "time_budget_minutes": time_budget_minutes,
             "item_limit": item_limit,
             "cost_budget_cents": 0,
             "stop_conditions": ["Capture one issue with its comment context"],
@@ -152,7 +153,7 @@ async def test_explicit_execute_schedules_work_for_a_leased_worker(client, db):
     assert completed.json()["external_signal_ids"]
 
 
-async def test_expired_worker_lease_is_reclaimed_without_duplicate_collection(client, db):
+async def test_expired_worker_lease_is_reclaimed_after_its_budget_window(client, db):
     mission, _ = await _create_github_mission(client)
     queued = await client.post(
         f"/api/acquisition-missions/{mission['id']}/queued-runs",
@@ -165,7 +166,7 @@ async def test_expired_worker_lease_is_reclaimed_without_duplicate_collection(cl
         db, worker_id="worker-a", lease_seconds=60, now=start
     )
     reclaimed = await claim_next_mission_run(
-        db, worker_id="worker-b", lease_seconds=60, now=start + timedelta(seconds=61)
+        db, worker_id="worker-b", lease_seconds=60, now=start + timedelta(minutes=11, seconds=1)
     )
 
     assert first_claim is not None
@@ -173,6 +174,23 @@ async def test_expired_worker_lease_is_reclaimed_without_duplicate_collection(cl
     assert reclaimed.id == first_claim.id
     assert reclaimed.execution_attempt == 2
     assert "run:lease_reclaimed" in reclaimed.checkpoints
+
+
+async def test_worker_lease_covers_the_pinned_mission_time_budget(client, db):
+    mission, _ = await _create_github_mission(client, time_budget_minutes=15)
+    queued = await client.post(
+        f"/api/acquisition-missions/{mission['id']}/queued-runs",
+        json={"execution_mode": "fixture"},
+    )
+    await client.post(f"/api/acquisition-mission-runs/{queued.json()['id']}/execute")
+    start = datetime.now(UTC)
+
+    claimed = await claim_next_mission_run(
+        db, worker_id="worker-budget", lease_seconds=1, now=start
+    )
+
+    assert claimed is not None
+    assert claimed.lease_expires_at >= start + timedelta(minutes=16)
 
 
 async def test_fixture_github_mission_preserves_raw_context_and_creates_traceable_signals(client):

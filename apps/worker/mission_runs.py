@@ -115,10 +115,14 @@ async def claim_next_mission_run(
     )
     if run is None:
         return None
+    mission = await db.get(AcquisitionMission, run.mission_id)
+    if mission is None:
+        raise ValueError("Mission no longer exists")
     reclaimed = run.lifecycle_status == "running"
     run.lifecycle_status = "running"
     run.lease_owner = worker_id
-    run.lease_expires_at = current_time + timedelta(seconds=lease_seconds)
+    effective_lease_seconds = max(lease_seconds, (mission.time_budget_minutes * 60) + 60)
+    run.lease_expires_at = current_time + timedelta(seconds=effective_lease_seconds)
     run.execution_attempt += 1
     run.checkpoints = [*run.checkpoints, "run:lease_reclaimed" if reclaimed else "run:leased"]
     await db.commit()
