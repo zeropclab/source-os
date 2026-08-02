@@ -76,3 +76,17 @@ async def test_feature_definition_page_exposes_tracking_and_rollback_contract(cl
     assert 'id="rollback-condition"' in page
     assert '/api/need-issues/${value("need-id")}/features' in page
     assert "build authorization" in page
+
+
+async def test_product_thesis_workbench_exposes_decision_controls(client):
+    response = await client.get("/product-theses/11111111-1111-1111-1111-111111111111")
+
+    assert response.status_code == 200
+    page = response.text
+    assert 'id="product-thesis-detail"' in page
+    assert 'id="thesis-observation-form"' in page
+    assert 'id="thesis-decision-form"' in page
+    assert 'id="build-authorization-form"' in page
+    assert "/api/product-theses/${thesisId}/workbench" in page
+    assert "/build-authorization" in page
+    assert "not market proof" in page

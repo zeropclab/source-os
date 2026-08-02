@@ -288,6 +288,13 @@ class ProductThesisDecision(BaseModel):
     rationale: str = Field(min_length=1)
 
 
+class ProductThesisWorkbenchResponse(BaseModel):
+    product_thesis: ProductThesisResponse
+    observations: list[ProductThesisObservationResponse]
+    build_authorization: BuildAuthorizationResponse | None
+    gaps: list[str]
+
+
 class NeedIssueResponse(BaseModel):
     id: uuid.UUID
     title: str

@@ -36,6 +36,7 @@
     const q = new URLSearchParams(location.search);
     const needId = q.get("need") || "";
     document.getElementById("need-id").value = needId;
+    document.getElementById("product-thesis-id").value = q.get("thesis") || "";
 
     const lines = (id) => document.getElementById(id).value.split("\\n").map((value) => value.trim()).filter(Boolean);
     async function request(url, options = {}) {
