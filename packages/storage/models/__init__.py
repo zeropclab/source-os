@@ -9,11 +9,13 @@ from .fetch_job import FetchJob
 from .media_asset import MediaAsset
 from .need_issue import (
     FeatureDefinition,
+    MarketObservation,
     NeedChallenge,
     NeedEvidence,
     NeedIssue,
     NeedIssueStatusEvent,
     NeedIssueVersion,
+    ValidationExperiment,
 )
 from .source import Source
 from .source_config_version import SourceConfigVersion
@@ -37,6 +39,8 @@ __all__ = [
     "NeedIssue",
     "NeedEvidence",
     "NeedChallenge",
+    "ValidationExperiment",
+    "MarketObservation",
     "NeedIssueVersion",
     "NeedIssueStatusEvent",
     "FeatureDefinition",
