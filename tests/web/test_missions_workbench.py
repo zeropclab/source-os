@@ -16,10 +16,15 @@ async def test_missions_workbench_exposes_an_explicit_bounded_mission_flow(clien
     assert 'value="fixture"' in page
     assert 'value="live"' in page
     assert 'id="mission-result"' in page
+    assert 'id="mission-history"' in page
+    assert 'id="refresh-missions"' in page
     assert 'id="evidence-inbox"' in page
     assert "/api/acquisition-missions" in page
     assert "/dry-runs" in page
     assert "/api/evidence-inbox" in page
+    assert "/api/acquisition-missions/${missionId}/runs" in page
+    assert "function openHistoricalMission" in page
+    assert "function openHistoricalRun" in page
     assert "function triageSignal" in page
     assert "Accept as evidence" in page
     assert "Ignore" in page

@@ -230,6 +230,40 @@ async def test_dry_run_rejects_preview_budget_that_exceeds_the_pinned_mission_bu
     assert "cannot exceed" in preview.json()["detail"]
 
 
+async def test_operator_can_reopen_a_persisted_mission_and_see_its_preview_and_execution_history(
+    client,
+):
+    mission, _ = await _create_github_mission(client, request_limit=3, item_limit=20)
+    app.dependency_overrides[get_github_mission_transport] = lambda: GitHubFixtureTransport(
+        scenario="issue_with_context"
+    )
+
+    preview = await client.post(
+        f"/api/acquisition-missions/{mission['id']}/dry-runs",
+        json={"execution_mode": "fixture", "preview_item_limit": 1, "preview_request_limit": 2},
+    )
+    execution = await client.post(
+        f"/api/acquisition-missions/{mission['id']}/runs",
+        json={"execution_mode": "fixture"},
+    )
+    missions = await client.get("/api/acquisition-missions?page=1&page_size=20")
+    history = await client.get(
+        f"/api/acquisition-missions/{mission['id']}/runs?page=1&page_size=20"
+    )
+
+    assert preview.status_code == 201
+    assert execution.status_code == 201
+    assert missions.status_code == 200
+    assert [item["id"] for item in missions.json()["items"]] == [mission["id"]]
+    assert history.status_code == 200
+    assert history.json()["total"] == 2
+    history_by_id = {item["id"]: item for item in history.json()["items"]}
+    assert history_by_id[preview.json()["id"]]["execution_mode"] == "dry_run:fixture"
+    assert history_by_id[preview.json()["id"]]["external_signal_ids"] == []
+    assert history_by_id[execution.json()["id"]]["execution_mode"] == "fixture"
+    assert history_by_id[execution.json()["id"]]["external_signal_ids"]
+
+
 async def test_live_issue_without_comments_remains_real_evidence_without_invented_claims(client):
     class NoCommentsTransport:
         transport_requests = 0

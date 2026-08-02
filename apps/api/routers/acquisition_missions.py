@@ -3,14 +3,15 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from apps.api.dependencies import get_db
 from apps.api.schemas.acquisition_mission import (
     AcquisitionMissionCreate,
+    AcquisitionMissionListResponse,
     AcquisitionMissionResponse,
 )
 from packages.storage.models.acquisition_mission import AcquisitionMission
@@ -61,6 +62,25 @@ async def create_acquisition_mission(
     db.add(mission)
     await db.commit()
     return await db.scalar(_mission_with_pinned_config(mission.id))
+
+
+@router.get("", response_model=AcquisitionMissionListResponse)
+async def list_acquisition_missions(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+):
+    total = await db.scalar(select(func.count(AcquisitionMission.id))) or 0
+    missions = await db.scalars(
+        select(AcquisitionMission)
+        .options(joinedload(AcquisitionMission.source_config_version))
+        .order_by(AcquisitionMission.updated_at.desc(), AcquisitionMission.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    return AcquisitionMissionListResponse(
+        items=list(missions.unique()), total=total, page=page, page_size=page_size
+    )
 
 
 @router.get("/{mission_id}", response_model=AcquisitionMissionResponse)

@@ -5,8 +5,8 @@ import copy
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
@@ -20,6 +20,7 @@ from apps.api.schemas.acquisition_mission import AcquisitionMissionResponse
 from apps.api.schemas.acquisition_mission_run import (
     AcquisitionMissionDryRunCreate,
     AcquisitionMissionRunCreate,
+    AcquisitionMissionRunListResponse,
     AcquisitionMissionRunResponse,
 )
 from packages.adapters.github_mission import (
@@ -293,6 +294,37 @@ async def create_acquisition_mission_run(
     await db.commit()
     await db.refresh(run)
     return run
+
+
+@router.get(
+    "/{mission_id}/runs",
+    response_model=AcquisitionMissionRunListResponse,
+)
+async def list_acquisition_mission_runs(
+    mission_id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+):
+    await _get_mission_or_404(db, mission_id)
+    total = (
+        await db.scalar(
+            select(func.count(AcquisitionMissionRun.id)).where(
+                AcquisitionMissionRun.mission_id == mission_id
+            )
+        )
+        or 0
+    )
+    runs = await db.scalars(
+        select(AcquisitionMissionRun)
+        .where(AcquisitionMissionRun.mission_id == mission_id)
+        .order_by(AcquisitionMissionRun.started_at.desc(), AcquisitionMissionRun.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    return AcquisitionMissionRunListResponse(
+        items=list(runs), total=total, page=page, page_size=page_size
+    )
 
 
 @read_router.post(

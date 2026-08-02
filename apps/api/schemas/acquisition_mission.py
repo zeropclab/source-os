@@ -38,3 +38,10 @@ class AcquisitionMissionResponse(AcquisitionMissionFields):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class AcquisitionMissionListResponse(BaseModel):
+    items: list[AcquisitionMissionResponse]
+    total: int
+    page: int
+    page_size: int
