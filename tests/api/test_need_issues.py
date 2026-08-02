@@ -205,6 +205,30 @@ async def test_feature_definition_requires_validated_need_and_tracking_plan(clie
     assert released.status_code == 200
     assert released.json()["status"] == "released"
 
+    outcome = await client.post(
+        f"/api/feature-outcomes/deliveries/{released.json()['id']}/outcomes",
+        json={
+            "kind": "payment",
+            "properties": {"payer_type": "clinic owner"},
+            "observation": "The clinic owner paid for the pilot.",
+            "amount_cents": 1000,
+        },
+    )
+    assert outcome.status_code == 201
+    decision = await client.post(
+        f"/api/feature-outcomes/deliveries/{released.json()['id']}/decision",
+        json={
+            "decision": "iterate",
+            "threshold_comparison": (
+                "One payment supports the first success threshold; repeated use is still unknown."
+            ),
+            "contribution_margin_cents": 700,
+            "rationale": "Continue measuring repeat use before retaining the feature.",
+        },
+    )
+    assert decision.status_code == 200
+    assert decision.json()["decision"] == "iterate"
+
 
 async def test_need_issue_preserves_signal_provenance_counterevidence_and_definition_history(
     client,
