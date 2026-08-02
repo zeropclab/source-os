@@ -159,6 +159,53 @@ class ExperimentDecision(BaseModel):
     rationale: str = Field(min_length=1)
 
 
+class ProductThesisCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=255)
+    user: str = Field(min_length=1)
+    beneficiary: str = Field(min_length=1)
+    decision_maker: str = Field(min_length=1)
+    payer: str = Field(min_length=1)
+    trigger: str = Field(min_length=1)
+    promised_outcome: str = Field(min_length=1)
+    alternative: str = Field(min_length=1)
+    channel: str = Field(min_length=1)
+    price_cents: int = Field(ge=0)
+    delivery_mechanism: str = Field(min_length=1)
+    delivery_mode: Literal["manual", "service-assisted", "automated"]
+
+
+class ProductThesisResponse(ProductThesisCreate):
+    id: uuid.UUID
+    need_issue_id: uuid.UUID
+    status: str
+    decision: str | None
+    decision_rationale: str | None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ProductThesisObservationCreate(BaseModel):
+    kind: Literal["quote", "purchase", "refusal", "refund", "delivery_effort", "direct_cost"]
+    observation: str = Field(min_length=1)
+    amount_cents: int | None = Field(default=None, ge=0)
+    operator_minutes: int | None = Field(default=None, ge=0)
+
+
+class ProductThesisObservationResponse(ProductThesisObservationCreate):
+    id: uuid.UUID
+    product_thesis_id: uuid.UUID
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ProductThesisDecision(BaseModel):
+    decision: Literal["continue", "change", "stop"]
+    rationale: str = Field(min_length=1)
+
+
 class NeedIssueResponse(BaseModel):
     id: uuid.UUID
     title: str

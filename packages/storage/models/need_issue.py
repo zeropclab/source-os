@@ -39,6 +39,9 @@ class NeedIssue(Base):
     experiments = relationship(
         "ValidationExperiment", back_populates="need_issue", cascade="all, delete-orphan"
     )
+    product_theses = relationship(
+        "ProductThesis", back_populates="need_issue", cascade="all, delete-orphan"
+    )
 
 
 class NeedEvidence(Base):
@@ -153,6 +156,55 @@ class MarketObservation(Base):
     )
 
     experiment = relationship("ValidationExperiment", back_populates="observations")
+
+
+class ProductThesis(Base):
+    __tablename__ = "product_theses"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    need_issue_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("need_issues.id", ondelete="CASCADE"), nullable=False
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    user: Mapped[str] = mapped_column(Text, nullable=False)
+    beneficiary: Mapped[str] = mapped_column(Text, nullable=False)
+    decision_maker: Mapped[str] = mapped_column(Text, nullable=False)
+    payer: Mapped[str] = mapped_column(Text, nullable=False)
+    trigger: Mapped[str] = mapped_column(Text, nullable=False)
+    promised_outcome: Mapped[str] = mapped_column(Text, nullable=False)
+    alternative: Mapped[str] = mapped_column(Text, nullable=False)
+    channel: Mapped[str] = mapped_column(Text, nullable=False)
+    price_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    delivery_mechanism: Mapped[str] = mapped_column(Text, nullable=False)
+    delivery_mode: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="draft")
+    decision: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    decision_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    need_issue = relationship("NeedIssue", back_populates="product_theses")
+    observations = relationship(
+        "ProductThesisObservation", back_populates="product_thesis", cascade="all, delete-orphan"
+    )
+
+
+class ProductThesisObservation(Base):
+    __tablename__ = "product_thesis_observations"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    product_thesis_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("product_theses.id", ondelete="CASCADE"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    observation: Mapped[str] = mapped_column(Text, nullable=False)
+    amount_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    operator_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    product_thesis = relationship("ProductThesis", back_populates="observations")
 
 
 class FeatureDefinition(Base):

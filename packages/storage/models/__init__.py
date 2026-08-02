@@ -15,6 +15,8 @@ from .need_issue import (
     NeedIssue,
     NeedIssueStatusEvent,
     NeedIssueVersion,
+    ProductThesis,
+    ProductThesisObservation,
     ValidationExperiment,
 )
 from .source import Source
@@ -43,6 +45,8 @@ __all__ = [
     "MarketObservation",
     "NeedIssueVersion",
     "NeedIssueStatusEvent",
+    "ProductThesis",
+    "ProductThesisObservation",
     "FeatureDefinition",
     "SignalTriageEvent",
 ]
