@@ -3,19 +3,44 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Integer,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..database import Base
 
 
 class AcquisitionMission(Base):
     __tablename__ = "acquisition_missions"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["source_id", "source_config_version_id"],
+            ["source_config_versions.source_id", "source_config_versions.id"],
+            name="fk_mission_config_belongs_to_source",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "source_config_version_id IS NOT NULL",
+            name="ck_acquisition_mission_config_pin_required",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     source_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("sources.id", ondelete="RESTRICT"), nullable=False
+    )
+    source_config_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=True,
     )
     reality_question: Mapped[str] = mapped_column(Text, nullable=False)
     mission_type: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -34,3 +59,5 @@ class AcquisitionMission(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
+
+    source_config_version = relationship("SourceConfigVersion", lazy="raise")
