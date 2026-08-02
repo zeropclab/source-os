@@ -148,6 +148,11 @@ async def create_need_issue(body: NeedIssueCreate, db: Annotated[AsyncSession, D
     return await _response(need_issue, db)
 
 
+@router.get("/{need_issue_id}", response_model=NeedIssueResponse)
+async def get_need_issue(need_issue_id: uuid.UUID, db: Annotated[AsyncSession, Depends(get_db)]):
+    return await _response(await _get_need_issue_or_404(db, need_issue_id), db)
+
+
 @router.post("/from-accepted-signal", response_model=NeedIssueResponse, status_code=201)
 async def create_need_issue_from_accepted_signal(
     body: NeedIssueFromAcceptedSignalCreate,

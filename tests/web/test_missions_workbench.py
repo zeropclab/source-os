@@ -45,3 +45,21 @@ async def test_need_definition_page_requires_an_explicit_accepted_signal_handoff
     assert "/api/external-signals/${signalId}" in page
     assert "/api/need-issues/from-accepted-signal" in page
     assert "This creates a captured Need Issue, not a validated demand" in page
+
+
+async def test_need_validation_workbench_exposes_counterevidence_challenge_and_experiment_forms(
+    client,
+):
+    response = await client.get("/needs/11111111-1111-1111-1111-111111111111")
+
+    assert response.status_code == 200
+    page = response.text
+    assert 'id="need-detail"' in page
+    assert 'id="need-evidence-form"' in page
+    assert 'id="need-challenge-form"' in page
+    assert 'id="validation-experiment-form"' in page
+    assert "/api/need-issues/${needId}" in page
+    assert "/evidence" in page
+    assert "/challenges" in page
+    assert "/experiments" in page
+    assert "No action here marks this Need Issue as discovery-validated" in page

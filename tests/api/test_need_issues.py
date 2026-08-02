@@ -23,6 +23,29 @@ async def test_create_need_issue_as_unvalidated_internal_record(client):
     assert body["id"]
 
 
+async def test_operator_can_retrieve_a_need_issue_definition_and_evidence_count(client):
+    created = await client.post(
+        "/api/need-issues",
+        json={
+            "title": "Operators reconcile reports manually",
+            "target_actor": "small business operators",
+            "context": "when closing a weekly reporting cycle",
+            "problem": "they compare separate exports manually to find mismatches",
+            "desired_outcome": "identify mismatches without repeated manual comparison",
+            "unknowns": ["Whether this repeats across independent operators"],
+            "next_validation_action": "collect a counterexample from an automated workflow",
+        },
+    )
+    need_id = created.json()["id"]
+
+    response = await client.get(f"/api/need-issues/{need_id}")
+
+    assert response.status_code == 200
+    assert response.json()["id"] == need_id
+    assert response.json()["title"] == "Operators reconcile reports manually"
+    assert response.json()["evidence_count"] == 0
+
+
 async def test_operator_can_create_captured_need_from_accepted_signal_with_provenance(client):
     signal = await client.post(
         "/api/external-signals",
