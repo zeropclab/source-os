@@ -26,6 +26,7 @@ from .routers import (
     ontology_hypotheses,
     product_theses,
     source_config_versions,
+    source_portfolio,
     source_probe_runs,
     sources,
     today,
@@ -59,6 +60,9 @@ app.add_middleware(
 # API routes
 app.include_router(health.router, tags=["Health"])
 app.include_router(sources.router, prefix="/api/sources", tags=["Sources"])
+app.include_router(
+    source_portfolio.router, prefix="/api/source-portfolio", tags=["Source Portfolio"]
+)
 app.include_router(
     source_config_versions.router,
     prefix="/api/sources",

@@ -27,10 +27,12 @@ from .need_issue import (
 from .source import Source
 from .source_config_version import SourceConfigVersion
 from .source_item import SourceItem
+from .source_portfolio_assessment import SourcePortfolioAssessment
 from .source_probe_run import SourceProbeRun
 
 __all__ = [
     "Source",
+    "SourcePortfolioAssessment",
     "SourceConfigVersion",
     "SourceProbeRun",
     "AcquisitionMission",

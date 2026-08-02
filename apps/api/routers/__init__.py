@@ -7,6 +7,7 @@ from . import (
     jobs,
     need_issues,
     source_config_versions,
+    source_portfolio,
     source_probe_runs,
     sources,
 )
@@ -16,6 +17,7 @@ __all__ = [
     "acquisition_mission_runs",
     "health",
     "sources",
+    "source_portfolio",
     "items",
     "jobs",
     "export",
