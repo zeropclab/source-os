@@ -125,3 +125,16 @@ async def test_pi_agent_workbench_exposes_bounded_evidence_and_operator_review_c
     assert 'id="agent-cancel-form"' in detail_page
     assert 'id="agent-decision-form"' in detail_page
     assert "/api/agent-runs/${runId}" in detail_page
+
+
+async def test_ontology_workbench_exposes_falsifiable_hypothesis_controls(client):
+    response = await client.get("/ontology")
+
+    assert response.status_code == 200
+    page = response.text
+    assert 'id="ontology-hypothesis-form"' in page
+    assert 'id="relationship-path"' in page
+    assert 'id="counterexample"' in page
+    assert 'id="smallest-validation-action"' in page
+    assert "/api/ontology-hypotheses" in page
+    assert "not a validated Need" in page
