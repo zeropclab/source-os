@@ -84,9 +84,8 @@ class NeedIssueResponse(BaseModel):
     counterevidence_summary: str | None
     next_validation_action: str
     status: str
-    evidence_count: int
+    evidence_count: int = 0
     created_at: datetime
     updated_at: datetime
 
     model_config = {"from_attributes": True}
-
