@@ -1,7 +1,6 @@
 """FastAPI dependency injection."""
 
-import os
-from sqlalchemy.ext.asyncio import AsyncSession
+from packages.adapters.source_probe import UnsupportedSourceProbeAdapter
 from packages.storage.database import async_session
 
 
@@ -12,3 +11,8 @@ async def get_db():
             yield session
         finally:
             await session.close()
+
+
+def get_source_probe_adapter():
+    """Return the safe default probe adapter until platform adapters are registered."""
+    return UnsupportedSourceProbeAdapter()
