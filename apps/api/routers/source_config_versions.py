@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api.dependencies import get_db
 from apps.api.schemas.source_config_version import (
     SourceConfigVersionCreate,
+    SourceConfigVersionListResponse,
     SourceConfigVersionResponse,
 )
 from packages.storage.models.source import Source
@@ -51,6 +52,24 @@ async def create_source_config_version(
     await db.commit()
     await db.refresh(config)
     return config
+
+
+@router.get(
+    "/{source_id}/config-versions",
+    response_model=SourceConfigVersionListResponse,
+)
+async def list_source_config_versions(
+    source_id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    await _lock_source_or_404(db, source_id)
+    configs = await db.scalars(
+        select(SourceConfigVersion)
+        .where(SourceConfigVersion.source_id == source_id)
+        .order_by(SourceConfigVersion.version.desc())
+    )
+    items = list(configs)
+    return SourceConfigVersionListResponse(items=items, total=len(items))
 
 
 @router.get(

@@ -55,6 +55,43 @@ async def test_operator_can_create_new_source_config_without_rewriting_the_previ
     }
 
 
+async def test_operator_can_review_the_newest_first_history_of_a_source_configuration(client, db):
+    source = await create_source(
+        db,
+        name="GitHub public issues",
+        platform="github",
+        source_type="issues",
+        url="https://github.com/example/public-project/issues",
+    )
+    first_payload = {
+        "access_mode": "public",
+        "query_scope": {"query_terms": ["bug"]},
+        "request_policy": {"request_limit": 2, "timeout_seconds": 10},
+        "pagination_context_rules": {"page_limit": 1},
+        "extraction_settings": {
+            "parser": "github_issue",
+            "parser_version": "v1",
+            "content_fields": ["title"],
+        },
+    }
+    second_payload = {
+        **first_payload,
+        "query_scope": {"query_terms": ["bug", "workaround"]},
+        "request_policy": {"request_limit": 4, "timeout_seconds": 20},
+    }
+
+    first = await client.post(f"/api/sources/{source.id}/config-versions", json=first_payload)
+    second = await client.post(f"/api/sources/{source.id}/config-versions", json=second_payload)
+    history = await client.get(f"/api/sources/{source.id}/config-versions")
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert history.status_code == 200
+    assert history.json()["total"] == 2
+    assert [item["version"] for item in history.json()["items"]] == [2, 1]
+    assert history.json()["items"][0]["query_scope"]["query_terms"] == ["bug", "workaround"]
+
+
 async def test_operator_cannot_publish_a_source_config_with_a_blank_query_scope(client, db):
     source = await create_source(
         db,
