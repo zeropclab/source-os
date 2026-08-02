@@ -107,6 +107,12 @@ workaround</textarea></label>
 </section>
 
 <section>
+    <header class="section-heading"><div><p class="eyebrow">Persistent collection assets</p><h2>Mission and run history</h2></div><button id="refresh-missions" type="button" class="secondary outline">Refresh</button></header>
+    <p><small>Saved missions and previews remain visible after a browser refresh. A preview is retained for audit, but it never creates candidate evidence.</small></p>
+    <div id="mission-history"><p>Loading mission history…</p></div>
+</section>
+
+<section>
     <header class="section-heading"><div><p class="eyebrow">Candidate evidence</p><h2>Evidence Inbox</h2></div><button id="refresh-evidence" type="button" class="secondary outline">Refresh</button></header>
     <p><small>Candidate evidence may be incomplete or misleading. It is not a validated demand and must be reviewed with its original material and lineage.</small></p>
     <div id="evidence-inbox"><p>Loading Evidence Inbox…</p></div>
@@ -226,6 +232,50 @@ async function loadEvidence() {
     } catch (error) { document.getElementById('evidence-inbox').innerHTML = `<p class="failure-detail">Could not load evidence: ${escapeHtml(error.message)}</p>`; }
 }
 
+function runSummary(run) {
+    const preview = run.budgets?.preview ? 'preview only' : 'execution';
+    const candidates = run.external_signal_ids?.length || 0;
+    return `${escapeHtml(run.execution_mode)} · ${escapeHtml(run.terminal_state)} · ${preview} · ${candidates} candidate${candidates === 1 ? '' : 's'}`;
+}
+
+async function loadMissionRunHistory(missionId) {
+    try {
+        const data = await request(`/api/acquisition-missions/${missionId}/runs?page=1&page_size=20`);
+        const target = document.getElementById(`mission-runs-${missionId}`);
+        if (!data.items.length) { target.innerHTML = '<p><em>No preview or execution has been recorded.</em></p>'; return; }
+        target.innerHTML = `<ol class="run-history">${data.items.map((run) => `<li><button type="button" class="secondary outline" onclick="openHistoricalRun('${missionId}', '${run.id}')">${runSummary(run)}</button></li>`).join('')}</ol>`;
+    } catch (error) { message(error.message, 'error'); }
+}
+
+async function loadMissionHistory() {
+    try {
+        const data = await request('/api/acquisition-missions?page=1&page_size=50');
+        const target = document.getElementById('mission-history');
+        if (!data.items.length) { target.innerHTML = '<p><em>No persisted missions yet. Define one above or record a manual observation.</em></p>'; return; }
+        target.innerHTML = `<div class="evidence-list">${data.items.map((mission) => `<article><header><strong>${escapeHtml(mission.reality_question)}</strong> <span class="badge">${escapeHtml(mission.mission_type)}</span></header><p><small>${escapeHtml(mission.target_audience)} · ${escapeHtml(mission.regions.join(', '))} · ${escapeHtml(mission.languages.join(', '))}</small></p><p><small>Budget: ${mission.item_limit} items · ${mission.cost_budget_cents} cents · config v${mission.source_config_version?.version ?? 'unknown'}</small></p><div class="triage-actions"><button type="button" class="secondary" onclick="openHistoricalMission('${mission.id}')">Use this mission</button><button type="button" class="secondary outline" onclick="loadMissionRunHistory('${mission.id}')">Show runs</button></div><div id="mission-runs-${mission.id}"></div></article>`).join('')}</div>`;
+    } catch (error) { document.getElementById('mission-history').innerHTML = `<p class="failure-detail">Could not load mission history: ${escapeHtml(error.message)}</p>`; }
+}
+
+async function openHistoricalMission(missionId) {
+    try {
+        const mission = await request(`/api/acquisition-missions/${missionId}`);
+        state.mission = mission;
+        document.getElementById('execution-panel').hidden = false;
+        document.getElementById('mission-result').innerHTML = `<article><p class="eyebrow">Saved mission</p><h2>${escapeHtml(mission.reality_question)}</h2><p>Config v${mission.source_config_version?.version ?? 'unknown'} remains pinned. Preview or execute this exact mission deliberately.</p></article>`;
+        message('Saved mission loaded. Its definition and pinned configuration were not rewritten.', 'success');
+    } catch (error) { message(error.message, 'error'); }
+}
+
+async function openHistoricalRun(missionId, runId) {
+    try {
+        await openHistoricalMission(missionId);
+        const run = await request(`/api/acquisition-mission-runs/${runId}`);
+        state.run = run;
+        renderRun(run);
+        if (!run.budgets?.preview) await loadEvidence();
+    } catch (error) { message(error.message, 'error'); }
+}
+
 async function triageSignal(signalId, status) {
     const reason = document.getElementById(`triage-reason-${signalId}`).value.trim();
     if (!reason) return message('A decision reason is required before triaging evidence.', 'error');
@@ -245,6 +295,7 @@ async function triageSignal(signalId, status) {
 }
 
 document.getElementById('refresh-evidence').addEventListener('click', loadEvidence);
-Promise.all([loadSources(), loadEvidence()]).catch((error) => message(error.message, 'error'));
+document.getElementById('refresh-missions').addEventListener('click', loadMissionHistory);
+Promise.all([loadSources(), loadEvidence(), loadMissionHistory()]).catch((error) => message(error.message, 'error'));
 </script>
 {% endblock %}

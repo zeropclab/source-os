@@ -45,3 +45,10 @@ class AcquisitionMissionRunResponse(BaseModel):
     completed_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class AcquisitionMissionRunListResponse(BaseModel):
+    items: list[AcquisitionMissionRunResponse]
+    total: int
+    page: int
+    page_size: int
