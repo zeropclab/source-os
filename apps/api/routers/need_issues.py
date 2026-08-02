@@ -153,6 +153,45 @@ async def get_need_issue(need_issue_id: uuid.UUID, db: Annotated[AsyncSession, D
     return await _response(await _get_need_issue_or_404(db, need_issue_id), db)
 
 
+@router.get("/{need_issue_id}/asset-ledger")
+async def get_need_issue_asset_ledger(
+    need_issue_id: uuid.UUID, db: Annotated[AsyncSession, Depends(get_db)]
+):
+    need_issue = await _get_need_issue_or_404(db, need_issue_id)
+    evidence = list(
+        await db.scalars(select(NeedEvidence).where(NeedEvidence.need_issue_id == need_issue.id))
+    )
+    challenges = list(
+        await db.scalars(select(NeedChallenge).where(NeedChallenge.need_issue_id == need_issue.id))
+    )
+    experiments = list(
+        await db.scalars(
+            select(ValidationExperiment).where(ValidationExperiment.need_issue_id == need_issue.id)
+        )
+    )
+    theses = list(
+        await db.scalars(select(ProductThesis).where(ProductThesis.need_issue_id == need_issue.id))
+    )
+    gaps = []
+    if not any(item.role == "supporting" for item in evidence):
+        gaps.append("supporting evidence")
+    if not any(item.role == "counter" for item in evidence):
+        gaps.append("counter evidence")
+    if not challenges:
+        gaps.append("challenge")
+    if not experiments:
+        gaps.append("validation experiment")
+    return {
+        "need_issue_id": need_issue.id,
+        "status": need_issue.status,
+        "evidence": evidence,
+        "challenges": challenges,
+        "experiments": experiments,
+        "product_theses": theses,
+        "gaps": gaps,
+    }
+
+
 @router.post("/from-accepted-signal", response_model=NeedIssueResponse, status_code=201)
 async def create_need_issue_from_accepted_signal(
     body: NeedIssueFromAcceptedSignalCreate,
