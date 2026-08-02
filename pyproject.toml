@@ -65,6 +65,10 @@ dev = [
 sourceos-api = "apps.api.main:main"
 sourceos-worker = "apps.worker.main:main"
 
+[tool.setuptools.packages.find]
+include = ["apps*", "packages*"]
+exclude = ["infra*", "tests*"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
@@ -76,7 +80,7 @@ select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM"]
 quote-style = "double"
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 ignore_missing_imports = true
 warn_return_any = true
 warn_unused_ignores = true
