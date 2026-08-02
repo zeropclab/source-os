@@ -63,3 +63,16 @@ async def test_need_validation_workbench_exposes_counterevidence_challenge_and_e
     assert "/challenges" in page
     assert "/experiments" in page
     assert "No action here marks this Need Issue as discovery-validated" in page
+
+
+async def test_feature_definition_page_exposes_tracking_and_rollback_contract(client):
+    response = await client.get("/features/create?need=11111111-1111-1111-1111-111111111111")
+
+    assert response.status_code == 200
+    page = response.text
+    assert 'id="feature-definition-form"' in page
+    assert 'id="product-thesis-id"' in page
+    assert 'id="tracking-events"' in page
+    assert 'id="rollback-condition"' in page
+    assert '/api/need-issues/${value("need-id")}/features' in page
+    assert "build authorization" in page
