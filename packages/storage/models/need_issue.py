@@ -256,3 +256,30 @@ class FeatureDefinition(Base):
     )
 
     need_issue = relationship("NeedIssue", back_populates="features")
+    delivery_records = relationship(
+        "DeliveryRecord", back_populates="feature", cascade="all, delete-orphan"
+    )
+
+
+class DeliveryRecord(Base):
+    __tablename__ = "delivery_records"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    feature_definition_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("feature_definitions.id", ondelete="CASCADE"), nullable=False
+    )
+    branch: Mapped[str] = mapped_column(Text, nullable=False)
+    implementation_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    tests_evidence: Mapped[str | None] = mapped_column(Text, nullable=True)
+    review_conclusion: Mapped[str | None] = mapped_column(Text, nullable=True)
+    risk: Mapped[str | None] = mapped_column(Text, nullable=True)
+    migration_evidence: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rollback_evidence: Mapped[str | None] = mapped_column(Text, nullable=True)
+    acceptance_evidence: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tracking_evidence: Mapped[str | None] = mapped_column(Text, nullable=True)
+    pr_reference: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="in-development")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    feature = relationship("FeatureDefinition", back_populates="delivery_records")
