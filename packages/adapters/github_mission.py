@@ -15,7 +15,6 @@ from packages.adapters.github_transport import (
     GitHubRequestBudgetExceededError,
     GitHubTransportError,
 )
-from packages.storage.models.acquisition_mission import AcquisitionMission
 from packages.storage.models.source import Source
 from packages.storage.models.source_config_version import SourceConfigVersion
 
@@ -152,10 +151,8 @@ class GitHubMissionAdapter:
         self,
         source: Source,
         config: SourceConfigVersion,
-        mission: AcquisitionMission,
         transport: GitHubMissionTransport,
     ) -> GitHubMissionResult:
-        del mission
         owner, repo = _repository_coordinates(source)
         retry_limit = config.request_policy.get("retry_limit", 0)
         raw_artifacts: list[dict] = []

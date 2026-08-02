@@ -148,7 +148,6 @@ async def create_acquisition_mission_run(
             result = await GitHubMissionAdapter().collect(
                 source,
                 config,
-                mission,
                 bounded_transport,
             )
     except TimeoutError:
@@ -219,7 +218,6 @@ async def replay_acquisition_mission_run(
     replay_result = await GitHubMissionAdapter().collect(
         source,
         mission.source_config_version,
-        mission,
         GitHubArtifactReplayTransport(copy.deepcopy(original.raw_artifacts)),
     )
     original_signal_rows = await db.scalars(
