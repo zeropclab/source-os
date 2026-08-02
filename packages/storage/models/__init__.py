@@ -25,6 +25,7 @@ from .need_issue import (
     ValidationExperiment,
 )
 from .source import Source
+from .source_config_proposal import SourceConfigProposal
 from .source_config_version import SourceConfigVersion
 from .source_item import SourceItem
 from .source_portfolio_assessment import SourcePortfolioAssessment
@@ -34,6 +35,7 @@ __all__ = [
     "Source",
     "SourcePortfolioAssessment",
     "SourceConfigVersion",
+    "SourceConfigProposal",
     "SourceProbeRun",
     "AcquisitionMission",
     "AcquisitionMissionRun",

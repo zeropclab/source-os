@@ -6,6 +6,7 @@ from . import (
     items,
     jobs,
     need_issues,
+    source_config_proposals,
     source_config_versions,
     source_portfolio,
     source_probe_runs,
@@ -23,5 +24,6 @@ __all__ = [
     "export",
     "need_issues",
     "source_config_versions",
+    "source_config_proposals",
     "source_probe_runs",
 ]

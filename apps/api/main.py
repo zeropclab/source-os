@@ -25,6 +25,7 @@ from .routers import (
     need_issues,
     ontology_hypotheses,
     product_theses,
+    source_config_proposals,
     source_config_versions,
     source_portfolio,
     source_probe_runs,
@@ -67,6 +68,11 @@ app.include_router(
     source_config_versions.router,
     prefix="/api/sources",
     tags=["Source Configuration Versions"],
+)
+app.include_router(
+    source_config_proposals.router,
+    prefix="/api/source-config-proposals",
+    tags=["Source Configuration Proposals"],
 )
 app.include_router(
     source_probe_runs.router,
