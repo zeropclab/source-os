@@ -124,6 +124,14 @@ async def test_need_validation_workbench_exposes_counterevidence_challenge_and_e
     assert "/experiments" in page
     assert "No action here marks this Need Issue as discovery-validated" in page
 
+    library = await client.get("/experiments")
+    assert library.status_code == 200
+    library_page = library.text
+    assert 'id="experiment-library"' in library_page
+    assert 'id="experiment-status-filter"' in library_page
+    assert "/api/experiments?page=1&page_size=100" in library_page
+    assert "Open experiment workbench" in library_page
+
 
 async def test_feature_definition_page_exposes_tracking_and_rollback_contract(client):
     response = await client.get("/features/create?need=11111111-1111-1111-1111-111111111111")

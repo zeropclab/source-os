@@ -116,6 +116,11 @@ async def test_operator_can_retrieve_a_draft_experiment_for_decision_work(client
     assert response.status_code == 200
     assert response.json()["status"] == "draft"
 
+    library = await client.get("/api/experiments?status=draft&page=1&page_size=20")
+    assert library.status_code == 200
+    assert library.json()["total"] == 1
+    assert library.json()["items"][0]["id"] == experiment.json()["id"]
+
 
 async def test_product_thesis_is_rejected_until_need_issue_is_discovery_validated(client):
     need = await client.post(

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Validation Experiment Library{% endblock %}
+{% block content %}
+<header class="workbench-heading">
+    <div><p class="eyebrow">Reality-facing tests</p><h1>Validation Experiment Library</h1><p>实验必须有明确阈值、停止条件和经营者批准。回应、拒绝与沉默都应进入记录。</p></div>
+    <a href="/needs" role="button" class="secondary">Open Need Library</a>
+</header>
+<section>
+    <div class="grid"><label>Status<select id="experiment-status-filter"><option value="">All statuses</option><option value="draft">Draft</option><option value="approved">Approved</option><option value="running">Running</option><option value="decided">Decided</option></select></label><div><button id="refresh-experiment-library" type="button" class="secondary outline">Refresh library</button></div></div>
+    <p><small>Experiment status is not a demand verdict. Only recorded observations can support a decision, and they still do not establish a scalable business.</small></p>
+    <div id="experiment-library"><p>Loading validation experiments…</p></div>
+</section>
+<script>
+const escapeHtml=(value)=>String(value??'').replace(/[&<>'"]/g,(character)=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[character]));
+async function loadExperimentLibrary(){const status=document.getElementById('experiment-status-filter').value;const endpoint=`/api/experiments?page=1&page_size=100${status?`&status=${encodeURIComponent(status)}`:''}`;const target=document.getElementById('experiment-library');try{const response=await fetch(endpoint);const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.detail||'Could not load Validation Experiment Library');if(!data.items.length){target.innerHTML='<p><em>No validation experiment matches this view. Define a Need and write a bounded test first.</em></p>';return}target.innerHTML=`<div class="evidence-list">${data.items.map((experiment)=>`<article><header><strong>${escapeHtml(experiment.status)}</strong> <span class="badge">${experiment.requires_external_action?'operator approval required':'internal only'}</span></header><p><strong>Hypothesis:</strong> ${escapeHtml(experiment.hypothesis)}</p><p><strong>Audience:</strong> ${escapeHtml(experiment.audience)}</p><p><small>Budget: ${experiment.budget_cents} cents · ${experiment.time_limit_hours} hours · decision: ${escapeHtml(experiment.decision||'not decided')}</small></p><p><strong>Stop condition:</strong> ${escapeHtml(experiment.stop_condition)}</p><a href="/needs/experiments/${encodeURIComponent(experiment.id)}" role="button" class="secondary">Open experiment workbench</a></article>`).join('')}</div>`}catch(error){target.innerHTML=`<p class="failure-detail">${escapeHtml(error.message)}</p>`}}
+document.getElementById('experiment-status-filter').addEventListener('change',loadExperimentLibrary);document.getElementById('refresh-experiment-library').addEventListener('click',loadExperimentLibrary);loadExperimentLibrary();
+</script>
+{% endblock %}

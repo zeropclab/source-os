@@ -3,7 +3,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,6 +13,7 @@ from apps.api.schemas.need_issue import (
     ExperimentDecision,
     MarketObservationCreate,
     MarketObservationResponse,
+    ValidationExperimentListResponse,
     ValidationExperimentResponse,
 )
 from packages.storage.models.need_issue import MarketObservation, ValidationExperiment
@@ -25,6 +26,29 @@ async def _experiment_or_404(db: AsyncSession, experiment_id: uuid.UUID) -> Vali
     if experiment is None:
         raise HTTPException(status_code=404, detail="Validation experiment not found")
     return experiment
+
+
+@router.get("", response_model=ValidationExperimentListResponse)
+async def list_validation_experiments(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    status: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+):
+    query = select(ValidationExperiment)
+    count_query = select(func.count(ValidationExperiment.id))
+    if status is not None:
+        query = query.where(ValidationExperiment.status == status)
+        count_query = count_query.where(ValidationExperiment.status == status)
+    total = await db.scalar(count_query) or 0
+    experiments = await db.scalars(
+        query.order_by(ValidationExperiment.updated_at.desc(), ValidationExperiment.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    return ValidationExperimentListResponse(
+        items=list(experiments), total=total, page=page, page_size=page_size
+    )
 
 
 @router.get("/{experiment_id}", response_model=ValidationExperimentResponse)
