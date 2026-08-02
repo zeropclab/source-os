@@ -50,6 +50,12 @@ async def test_agent_run_is_bounded_auditable_and_only_returns_a_cited_proposal(
     assert run["evidence_bundle_hash"]
     assert run["tool_allowlist"] == []
 
+    retrieved = await client.get(f"/api/agent-runs/{run['id']}")
+    assert retrieved.status_code == 200
+    assert retrieved.json()["id"] == run["id"]
+    assert retrieved.json()["evidence_bundle_hash"] == run["evidence_bundle_hash"]
+    assert retrieved.json()["output"] is None
+
     completed = await client.post(f"/api/agent-runs/{run['id']}/execute")
     assert completed.status_code == 200
     output = completed.json()["output"]

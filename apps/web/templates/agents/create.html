@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block title %}Run Pi Agent{% endblock %}
+
+{% block content %}
+<header class="workbench-heading">
+    <div>
+        <p class="eyebrow">Bounded proposal run</p>
+        <h1>Pi Agent</h1>
+        <p>
+            Pi receives only the selected evidence bundle and writes only a proposal. It cannot collect,
+            validate a Need Issue, mutate business facts, or take an external action.
+        </p>
+    </div>
+</header>
+
+<div id="agent-message" role="status" aria-live="polite"></div>
+<article>
+    <header><strong>Create bounded proposal run</strong></header>
+    <form id="agent-run-form">
+        <label>External Signal IDs <small>(one UUID per line; explicitly selected evidence only)</small><textarea id="agent-signal-ids" required></textarea></label>
+        <label>Task instruction<textarea id="agent-task-instruction" required placeholder="Propose a falsifiable Need hypothesis and a competing explanation."></textarea></label>
+        <div class="grid">
+            <label>Idempotency key<input id="agent-idempotency-key" required></label>
+            <label>Model version<input id="agent-model-version" value="pi-faux-v1" required></label>
+            <label>Prompt version<input id="agent-prompt-version" value="need-proposal-v1" required></label>
+        </div>
+        <div class="grid">
+            <label>Max tool calls<input id="agent-max-tool-calls" type="number" min="1" max="20" value="1" required></label>
+            <label>Max tokens<input id="agent-max-tokens" type="number" min="1" max="20000" value="500" required></label>
+            <label>Max cost cents<input id="agent-max-cost" type="number" min="0" max="10000" value="0" required></label>
+        </div>
+        <button type="submit">Create proposal run</button>
+    </form>
+</article>
+
+<script>
+    const lines = (id) => document.getElementById(id).value.split("\n").map((value) => value.trim()).filter(Boolean);
+    const value = (id) => document.getElementById(id).value.trim();
+    async function request(url, options = {}) { const response = await fetch(url, options); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : JSON.stringify(data)); return data; }
+    document.getElementById("agent-run-form").onsubmit = async (event) => {
+        event.preventDefault();
+        try {
+            const run = await request("/api/agent-runs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ evidence_signal_ids: lines("agent-signal-ids"), task_instruction: value("agent-task-instruction"), idempotency_key: value("agent-idempotency-key"), model_version: value("agent-model-version"), prompt_version: value("agent-prompt-version"), max_tool_calls: Number(value("agent-max-tool-calls")), max_tokens: Number(value("agent-max-tokens")), max_cost_cents: Number(value("agent-max-cost")) }) });
+            document.getElementById("agent-message").innerHTML = `Proposal run ${run.id} created. <a href="/agents/${encodeURIComponent(run.id)}">Review it</a>.`;
+        } catch (error) { document.getElementById("agent-message").textContent = error.message; }
+    };
+</script>
+{% endblock %}

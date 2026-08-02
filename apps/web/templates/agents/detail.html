@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block title %}Review Pi Agent Run{% endblock %}
+
+{% block content %}
+<header class="workbench-heading">
+    <div>
+        <p class="eyebrow">Proposal audit</p>
+        <h1>Pi Agent Run</h1>
+        <p>Review the bounded evidence, output and decisions. A proposal does not change a Need Issue or prove a demand.</p>
+    </div>
+</header>
+
+<div id="agent-message" role="status" aria-live="polite"></div>
+<article id="agent-run-detail"><p>Loading Agent Run…</p></article>
+
+<section class="workbench-grid">
+    <article><header><strong>Execute</strong></header><form id="agent-execute-form"><button type="submit">Execute bounded proposal</button></form></article>
+    <article><header><strong>Cancel</strong></header><form id="agent-cancel-form"><button type="submit" class="secondary">Cancel run</button></form></article>
+    <article>
+        <header><strong>Operator review</strong></header>
+        <form id="agent-decision-form">
+            <label>Decision<select id="agent-decision"><option value="accepted">Accepted as proposal</option><option value="modified">Modified</option><option value="rejected">Rejected</option></select></label>
+            <label>Reason<textarea id="agent-decision-reason" required></textarea></label>
+            <label>Changes <small>(JSON array; optional)</small><textarea id="agent-decision-changes" placeholder="[]">[]</textarea></label>
+            <button type="submit" class="contrast">Record operator decision</button>
+        </form>
+    </article>
+</section>
+
+<script>
+    const runId = '{{ run_id }}';
+    const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", "\"": "&quot;" }[character]));
+    const message = (text, kind = "success") => { document.getElementById("agent-message").innerHTML = `<article class="message-${kind}">${escapeHtml(text)}</article>`; };
+    async function request(url, options = {}) { const response = await fetch(url, options); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : JSON.stringify(data)); return data; }
+    async function loadRun() {
+        try {
+            const run = await request(`/api/agent-runs/${runId}`);
+            const evidence = run.evidence_bundle.map((item) => `<li><strong>${escapeHtml(item.source_label)}</strong>: ${escapeHtml(item.observation)}</li>`).join("") || "<li>No evidence bundle.</li>";
+            const decisions = run.operator_changes.map((item) => `<li><strong>${escapeHtml(item.decision)}</strong>: ${escapeHtml(item.reason)}</li>`).join("") || "<li>No operator decision recorded.</li>";
+            const output = run.output ? `<pre>${escapeHtml(JSON.stringify(run.output, null, 2))}</pre>` : "<p>No proposal output.</p>";
+            document.getElementById("agent-run-detail").innerHTML = `<header><strong>${escapeHtml(run.status)}</strong> <span class="badge">${escapeHtml(run.model_version)}</span></header><p><strong>Evidence bundle hash:</strong> ${escapeHtml(run.evidence_bundle_hash)}</p><p><strong>Budget:</strong> ${escapeHtml(JSON.stringify(run.budgets))}</p><p><strong>Tool allowlist:</strong> ${escapeHtml(JSON.stringify(run.tool_allowlist))}</p><p><strong>Tool audit:</strong> ${escapeHtml(JSON.stringify(run.tool_audit))}</p><h3>Selected evidence</h3><ul>${evidence}</ul><h3>Proposal</h3>${output}<h3>Errors</h3><pre>${escapeHtml(JSON.stringify(run.errors, null, 2))}</pre><h3>Operator decisions</h3><ul>${decisions}</ul>`;
+        } catch (error) { document.getElementById("agent-run-detail").innerHTML = `<p class="failure-detail">${escapeHtml(error.message)}</p>`; }
+    }
+    document.getElementById("agent-execute-form").onsubmit = async (event) => { event.preventDefault(); try { await request(`/api/agent-runs/${runId}/execute`, { method: "POST" }); message("Pi completed a proposal run; review its citations and limits before acting."); await loadRun(); } catch (error) { message(error.message, "error"); } };
+    document.getElementById("agent-cancel-form").onsubmit = async (event) => { event.preventDefault(); try { await request(`/api/agent-runs/${runId}/cancel`, { method: "POST" }); message("Agent Run cancelled."); await loadRun(); } catch (error) { message(error.message, "error"); } };
+    document.getElementById("agent-decision-form").onsubmit = async (event) => { event.preventDefault(); try { const changes = JSON.parse(document.getElementById("agent-decision-changes").value || "[]"); if (!Array.isArray(changes)) throw new Error("Changes must be a JSON array."); await request(`/api/agent-runs/${runId}/operator-decisions`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decision: document.getElementById("agent-decision").value, reason: document.getElementById("agent-decision-reason").value.trim(), changes }) }); message("Operator decision recorded. The proposal remains an auditable suggestion."); await loadRun(); } catch (error) { message(error.message, "error"); } };
+    loadRun();
+</script>
+{% endblock %}
