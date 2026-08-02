@@ -299,6 +299,13 @@ async def test_one_page_with_multiple_issues_and_comments_emits_every_bounded_si
         "comment",
     ]
 
+    replay_response = await client.post(f"/api/acquisition-mission-runs/{run['id']}/replay")
+    assert replay_response.status_code == 201
+    replay = replay_response.json()
+    assert replay["terminal_state"] == "succeeded"
+    assert replay["external_signal_ids"] == run["external_signal_ids"]
+    assert replay["checkpoints"][-1] == "replay:lineage_verified"
+
 
 async def test_invalid_timestamp_is_a_visible_parsing_failure(client):
     class InvalidTimestampTransport(GitHubFixtureTransport):

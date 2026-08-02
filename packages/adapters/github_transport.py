@@ -237,8 +237,14 @@ class GitHubArtifactReplayTransport:
         return GitHubPage(items=issues, page=1, has_next_page=False)
 
     async def list_issue_comments(self, owner: str, repo: str, issue_number: int) -> GitHubPage:
+        issue_key = f"github:{owner}/{repo}:issue:{issue_number}"
         page_artifact = next(
-            (item for item in self._raw_artifacts if item.get("kind") == "comment_page"),
+            (
+                item
+                for item in self._raw_artifacts
+                if item.get("kind") == "comment_page"
+                and item.get("parent_artifact_key") == issue_key
+            ),
             None,
         )
         if page_artifact is not None:
@@ -248,5 +254,9 @@ class GitHubArtifactReplayTransport:
                 page=raw.get("page", 1),
                 has_next_page=raw.get("has_next_page", False),
             )
-        comments = [item["raw"] for item in self._raw_artifacts if item.get("kind") == "comment"]
+        comments = [
+            item["raw"]
+            for item in self._raw_artifacts
+            if item.get("kind") == "comment" and item.get("parent_artifact_key") == issue_key
+        ]
         return GitHubPage(items=comments, page=1, has_next_page=False)
