@@ -23,12 +23,18 @@ from apps.api.schemas.acquisition_mission_run import (
 )
 from packages.adapters.github_mission import (
     BoundedGitHubMissionTransport,
+    ContextCompleteness,
+    GitHubArtifactReplayTransport,
     GitHubMissionAdapter,
     GitHubMissionResult,
     GitHubMissionTransport,
+    SignalDraft,
 )
 from packages.storage.models.acquisition_mission import AcquisitionMission
 from packages.storage.models.acquisition_mission_run import AcquisitionMissionRun
+from packages.storage.models.acquisition_mission_run_signal import (
+    AcquisitionMissionRunSignal,
+)
 from packages.storage.models.external_signal import ExternalSignal
 from packages.storage.models.source import Source
 
@@ -55,6 +61,63 @@ def _input_snapshot(mission: AcquisitionMission) -> dict:
     mission_data = AcquisitionMissionResponse.model_validate(mission).model_dump(mode="json")
     config_data = mission_data.pop("source_config_version")
     return {"mission": mission_data, "source_config_version": config_data}
+
+
+async def _persist_signal_drafts(
+    db: AsyncSession, run: AcquisitionMissionRun, drafts: list[SignalDraft]
+) -> None:
+    if not drafts:
+        return
+    await db.execute(
+        insert(ExternalSignal)
+        .values(
+            [
+                {
+                    "id": uuid.uuid4(),
+                    "mission_run_id": run.id,
+                    "lineage_key": draft.lineage_key,
+                    "raw_artifact_key": draft.raw_artifact_key,
+                    "source_label": draft.source_label,
+                    "source_uri": draft.source_uri,
+                    "original_material": draft.original_material,
+                    "observed_at": draft.observed_at,
+                    "observation": draft.observation,
+                    "interpretation": None,
+                    "parent_context_available": draft.parent_context_available,
+                    "context_snapshot": draft.context_snapshot,
+                    "status": "candidate",
+                }
+                for draft in drafts
+            ]
+        )
+        .on_conflict_do_nothing(index_elements=[ExternalSignal.lineage_key])
+    )
+    signal_rows = await db.scalars(
+        select(ExternalSignal).where(
+            ExternalSignal.lineage_key.in_([draft.lineage_key for draft in drafts])
+        )
+    )
+    signals_by_lineage = {signal.lineage_key: signal for signal in signal_rows}
+    run.external_signal_ids = [str(signals_by_lineage[draft.lineage_key].id) for draft in drafts]
+    await db.execute(
+        insert(AcquisitionMissionRunSignal)
+        .values(
+            [
+                {
+                    "run_id": run.id,
+                    "signal_id": uuid.UUID(signal_id),
+                    "ordinal": ordinal,
+                }
+                for ordinal, signal_id in enumerate(run.external_signal_ids)
+            ]
+        )
+        .on_conflict_do_nothing(
+            index_elements=[
+                AcquisitionMissionRunSignal.run_id,
+                AcquisitionMissionRunSignal.signal_id,
+            ]
+        )
+    )
 
 
 @router.post(
@@ -92,13 +155,13 @@ async def create_acquisition_mission_run(
         result = GitHubMissionResult(
             raw_artifacts=[],
             signals=[],
-            context_completeness={
-                "issue": False,
-                "comments": False,
-                "parent_context": False,
-                "pagination_complete": False,
-                "missing": ["issue_page", "comments", "parent_context"],
-            },
+            context_completeness=ContextCompleteness(
+                False,
+                False,
+                False,
+                False,
+                ("issue_page", "comments", "parent_context"),
+            ),
             checkpoints=["run:timeout"],
             retry_count=0,
             terminal_state="failed",
@@ -120,7 +183,7 @@ async def create_acquisition_mission_run(
         parser_version=(
             f"{config.extraction_settings['parser']}:{config.extraction_settings['parser_version']}"
         ),
-        context_completeness=result.context_completeness,
+        context_completeness=result.context_completeness.as_dict(),
         checkpoints=result.checkpoints,
         retry_count=result.retry_count,
         terminal_state=result.terminal_state,
@@ -131,40 +194,7 @@ async def create_acquisition_mission_run(
     )
     db.add(run)
     await db.flush()
-    if result.signals:
-        await db.execute(
-            insert(ExternalSignal)
-            .values(
-                [
-                    {
-                        "id": uuid.uuid4(),
-                        "mission_run_id": run.id,
-                        "lineage_key": draft.lineage_key,
-                        "raw_artifact_key": draft.raw_artifact_key,
-                        "source_label": draft.source_label,
-                        "source_uri": draft.source_uri,
-                        "original_material": draft.original_material,
-                        "observed_at": draft.observed_at,
-                        "observation": draft.observation,
-                        "interpretation": None,
-                        "parent_context_available": draft.parent_context_available,
-                        "context_snapshot": draft.context_snapshot,
-                        "status": "candidate",
-                    }
-                    for draft in result.signals
-                ]
-            )
-            .on_conflict_do_nothing(index_elements=[ExternalSignal.lineage_key])
-        )
-        signal_rows = await db.scalars(
-            select(ExternalSignal).where(
-                ExternalSignal.lineage_key.in_([draft.lineage_key for draft in result.signals])
-            )
-        )
-        signals_by_lineage = {signal.lineage_key: signal for signal in signal_rows}
-        run.external_signal_ids = [
-            str(signals_by_lineage[draft.lineage_key].id) for draft in result.signals
-        ]
+    await _persist_signal_drafts(db, run, result.signals)
     await db.commit()
     await db.refresh(run)
     return run
@@ -182,6 +212,25 @@ async def replay_acquisition_mission_run(
     original = await db.get(AcquisitionMissionRun, run_id)
     if original is None:
         raise HTTPException(status_code=404, detail="Acquisition Mission run not found")
+    mission = await _get_mission_or_404(db, original.mission_id)
+    source = await db.get(Source, mission.source_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Source not found")
+    replay_result = await GitHubMissionAdapter().collect(
+        source,
+        mission.source_config_version,
+        mission,
+        GitHubArtifactReplayTransport(copy.deepcopy(original.raw_artifacts)),
+    )
+    original_signal_rows = await db.scalars(
+        select(ExternalSignal).where(
+            ExternalSignal.id.in_([uuid.UUID(value) for value in original.external_signal_ids])
+        )
+    )
+    original_lineage_by_id = {str(signal.id): signal.lineage_key for signal in original_signal_rows}
+    original_lineage = [original_lineage_by_id[value] for value in original.external_signal_ids]
+    replay_lineage = [draft.lineage_key for draft in replay_result.signals]
+    lineage_verified = replay_lineage == original_lineage
     replay = AcquisitionMissionRun(
         mission_id=original.mission_id,
         source_config_version_id=original.source_config_version_id,
@@ -191,16 +240,23 @@ async def replay_acquisition_mission_run(
         budgets=copy.deepcopy(original.budgets),
         raw_artifacts=copy.deepcopy(original.raw_artifacts),
         parser_version=original.parser_version,
-        context_completeness=copy.deepcopy(original.context_completeness),
-        checkpoints=copy.deepcopy(original.checkpoints),
-        retry_count=original.retry_count,
-        terminal_state=original.terminal_state,
-        failure_detail=original.failure_detail,
+        context_completeness=replay_result.context_completeness.as_dict(),
+        checkpoints=[*replay_result.checkpoints, "replay:lineage_verified"],
+        retry_count=replay_result.retry_count,
+        terminal_state=(replay_result.terminal_state if lineage_verified else "failed"),
+        failure_detail=(
+            replay_result.failure_detail
+            if lineage_verified
+            else "Replay lineage diverged from the original mission run."
+        ),
         transport_requests=0,
         network_requests=0,
-        external_signal_ids=copy.deepcopy(original.external_signal_ids),
+        external_signal_ids=[],
     )
     db.add(replay)
+    await db.flush()
+    if lineage_verified:
+        await _persist_signal_drafts(db, replay, replay_result.signals)
     await db.commit()
     await db.refresh(replay)
     return replay

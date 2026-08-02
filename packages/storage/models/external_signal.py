@@ -41,6 +41,15 @@ class ExternalSignal(Base):
         cascade="all, delete-orphan",
         order_by="SignalTriageEvent.created_at",
     )
+    mission_run_links = relationship(
+        "AcquisitionMissionRunSignal",
+        order_by="AcquisitionMissionRunSignal.ordinal",
+        lazy="raise",
+    )
+
+    @property
+    def mission_run_ids(self) -> list[uuid.UUID]:
+        return [link.run_id for link in self.mission_run_links]
 
 
 class SignalTriageEvent(Base):

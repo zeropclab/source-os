@@ -5,7 +5,11 @@ from apps.api.dependencies import (
     get_github_mission_transport,
 )
 from apps.api.main import app
-from packages.adapters.github_mission import GitHubFixtureTransport, GitHubPage
+from packages.adapters.github_mission import (
+    GitHubFixtureTransport,
+    GitHubPage,
+    GitHubRateLimitError,
+)
 
 
 async def _create_github_mission(client, *, request_limit=3, retry_limit=1, timeout_seconds=10):
@@ -111,9 +115,11 @@ async def test_fixture_github_mission_preserves_raw_context_and_creates_traceabl
     assert run["retry_count"] == 0
     assert run["transport_requests"] == 2
     assert run["network_requests"] == 0
-    assert len(run["raw_artifacts"]) == 2
-    assert run["raw_artifacts"][0]["artifact_key"] == "github:example/payments:issue:42"
-    assert run["raw_artifacts"][1]["artifact_key"] == "github:example/payments:comment:4201"
+    assert len(run["raw_artifacts"]) == 4
+    assert run["raw_artifacts"][0]["kind"] == "issue_page"
+    assert run["raw_artifacts"][1]["artifact_key"] == "github:example/payments:issue:42"
+    assert run["raw_artifacts"][2]["kind"] == "comment_page"
+    assert run["raw_artifacts"][3]["artifact_key"] == "github:example/payments:comment:4201"
     assert len(run["external_signal_ids"]) == 2
 
     retrieved = await client.get(f"/api/acquisition-mission-runs/{run['id']}")
@@ -209,6 +215,7 @@ async def test_live_issue_without_comments_remains_real_evidence_without_invente
         "missing": [],
     }
     assert [artifact["kind"] for artifact in run["raw_artifacts"]] == [
+        "issue_page",
         "issue",
         "comment_page",
     ]
@@ -274,7 +281,7 @@ async def test_empty_github_result_is_visible_and_creates_no_signal(client):
             "artifact_key": "github:example/payments:issues:page:1",
             "kind": "issue_page",
             "source_uri": "https://github.com/example/payments/issues?page=1",
-            "raw": {"items": [], "has_next_page": False},
+            "raw": {"items": [], "page": 1, "has_next_page": False},
         }
     ]
 
@@ -308,6 +315,84 @@ async def test_rate_limit_exhausts_configured_retry_and_remains_a_failed_run(cli
 
     inbox = await client.get("/api/evidence-inbox")
     assert inbox.json()["items"] == []
+
+
+async def test_issue_retry_success_keeps_rate_limit_evidence(client):
+    class OnceRateLimitedTransport(GitHubFixtureTransport):
+        issue_attempts = 0
+
+        async def list_issues(self, owner, repo, query_terms):
+            self.issue_attempts += 1
+            if self.issue_attempts == 1:
+                self.transport_requests += 1
+                raise GitHubRateLimitError
+            return await super().list_issues(owner, repo, query_terms)
+
+    mission, _ = await _create_github_mission(client)
+    app.dependency_overrides[get_github_mission_transport] = lambda: OnceRateLimitedTransport(
+        scenario="issue_with_context"
+    )
+
+    created = await client.post(
+        f"/api/acquisition-missions/{mission['id']}/runs",
+        json={"execution_mode": "fixture"},
+    )
+
+    assert created.status_code == 201
+    run = created.json()
+    assert run["terminal_state"] == "succeeded"
+    assert run["retry_count"] == 1
+    assert run["transport_requests"] == 3
+    assert run["checkpoints"][0] == "issues:attempt:1:rate_limited"
+    assert run["raw_artifacts"][0]["kind"] == "transport_failure"
+
+
+async def test_comment_rate_limit_exhaustion_is_a_visible_partial_run(client):
+    class CommentRateLimitedTransport(GitHubFixtureTransport):
+        async def list_issue_comments(self, owner, repo, issue_number):
+            self.transport_requests += 1
+            raise GitHubRateLimitError
+
+    mission, _ = await _create_github_mission(client)
+    app.dependency_overrides[get_github_mission_transport] = lambda: CommentRateLimitedTransport(
+        scenario="issue_with_context"
+    )
+
+    created = await client.post(
+        f"/api/acquisition-missions/{mission['id']}/runs",
+        json={"execution_mode": "fixture"},
+    )
+
+    assert created.status_code == 201
+    run = created.json()
+    assert run["terminal_state"] == "partial"
+    assert run["failure_detail"] == "GitHub comment rate limit persisted after 1 retry."
+    assert run["retry_count"] == 1
+    assert run["transport_requests"] == 3
+    assert len(run["external_signal_ids"]) == 1
+    assert [artifact["raw"]["status"] for artifact in run["raw_artifacts"][-2:]] == [
+        429,
+        429,
+    ]
+
+
+async def test_request_budget_exhaustion_during_retry_is_a_visible_failed_run(client):
+    mission, _ = await _create_github_mission(client, request_limit=1)
+    app.dependency_overrides[get_github_mission_transport] = lambda: GitHubFixtureTransport(
+        scenario="rate_limited"
+    )
+
+    created = await client.post(
+        f"/api/acquisition-missions/{mission['id']}/runs",
+        json={"execution_mode": "fixture"},
+    )
+
+    assert created.status_code == 201
+    run = created.json()
+    assert run["terminal_state"] == "failed"
+    assert run["failure_detail"] == "Request budget exhausted while retrying GitHub issues."
+    assert run["transport_requests"] == 1
+    assert run["checkpoints"][-1] == "issues:attempt:2:budget_exhausted"
 
 
 async def test_parsing_failure_preserves_raw_page_and_creates_no_signal(client):
@@ -358,10 +443,15 @@ async def test_fixture_replay_reuses_lineage_without_transport_or_duplicate_sign
     assert replay["external_signal_ids"] == original["external_signal_ids"]
     assert replay["transport_requests"] == 0
     assert replay["network_requests"] == 0
+    assert replay["checkpoints"][-1] == "replay:lineage_verified"
 
     inbox = await client.get("/api/evidence-inbox")
     assert len(inbox.json()["items"]) == 2
     assert {item["id"] for item in inbox.json()["items"]} == set(original["external_signal_ids"])
+    assert all(
+        set(item["mission_run_ids"]) == {original["id"], replay["id"]}
+        for item in inbox.json()["items"]
+    )
 
 
 async def test_repeated_mission_run_reuses_existing_business_lineage(client):
@@ -387,6 +477,10 @@ async def test_repeated_mission_run_reuses_existing_business_lineage(client):
     )
     inbox = await client.get("/api/evidence-inbox")
     assert len(inbox.json()["items"]) == 2
+    assert all(
+        set(item["mission_run_ids"]) == {first_response.json()["id"], second_response.json()["id"]}
+        for item in inbox.json()["items"]
+    )
 
 
 async def test_request_budget_stops_before_comment_fetch_and_preserves_partial_issue(client):
@@ -418,8 +512,39 @@ async def test_request_budget_stops_before_comment_fetch_and_preserves_partial_i
         "issues:page:1",
         "issue:42:comments:budget_exhausted",
     ]
-    assert [artifact["kind"] for artifact in run["raw_artifacts"]] == ["issue"]
+    assert [artifact["kind"] for artifact in run["raw_artifacts"]] == [
+        "issue_page",
+        "issue",
+    ]
     assert len(run["external_signal_ids"]) == 1
+
+
+async def test_uncollected_next_page_is_an_honest_partial_result(client):
+    class PaginatedTransport(GitHubFixtureTransport):
+        async def list_issues(self, owner, repo, query_terms):
+            page = await super().list_issues(owner, repo, query_terms)
+            return GitHubPage(items=page.items, page=1, has_next_page=True)
+
+    mission, _ = await _create_github_mission(client)
+    app.dependency_overrides[get_github_live_transport] = lambda: PaginatedTransport(
+        scenario="issue_with_context"
+    )
+
+    created = await client.post(
+        f"/api/acquisition-missions/{mission['id']}/runs",
+        json={"execution_mode": "live"},
+    )
+
+    assert created.status_code == 201
+    run = created.json()
+    assert run["terminal_state"] == "partial"
+    assert run["failure_detail"] == ("Additional GitHub pages remain outside this bounded run.")
+    assert run["context_completeness"]["pagination_complete"] is False
+    assert "additional_pages" in run["context_completeness"]["missing"]
+    issue_page = next(
+        artifact for artifact in run["raw_artifacts"] if artifact["kind"] == "issue_page"
+    )
+    assert issue_page["raw"]["has_next_page"] is True
 
 
 async def test_time_budget_cancels_hanging_transport_and_persists_failed_run(client):

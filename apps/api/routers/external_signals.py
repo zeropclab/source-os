@@ -24,7 +24,10 @@ inbox_router = APIRouter()
 async def _get_signal_or_404(db: AsyncSession, signal_id: uuid.UUID) -> ExternalSignal:
     result = await db.execute(
         select(ExternalSignal)
-        .options(selectinload(ExternalSignal.triage_events))
+        .options(
+            selectinload(ExternalSignal.triage_events),
+            selectinload(ExternalSignal.mission_run_links),
+        )
         .where(ExternalSignal.id == signal_id)
     )
     signal = result.scalar_one_or_none()
@@ -71,7 +74,10 @@ async def list_evidence_inbox(
 ):
     result = await db.execute(
         select(ExternalSignal)
-        .options(selectinload(ExternalSignal.triage_events))
+        .options(
+            selectinload(ExternalSignal.triage_events),
+            selectinload(ExternalSignal.mission_run_links),
+        )
         .where(ExternalSignal.status == "candidate")
         .order_by(ExternalSignal.captured_at.desc())
     )

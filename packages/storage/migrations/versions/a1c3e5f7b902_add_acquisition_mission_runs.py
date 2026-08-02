@@ -98,9 +98,29 @@ def upgrade() -> None:
         "external_signals",
         ["lineage_key"],
     )
+    op.create_table(
+        "acquisition_mission_run_signals",
+        sa.Column("run_id", sa.UUID(), nullable=False),
+        sa.Column("signal_id", sa.UUID(), nullable=False),
+        sa.Column("ordinal", sa.Integer(), nullable=False),
+        sa.CheckConstraint("ordinal >= 0", name="ck_run_signal_ordinal_nonnegative"),
+        sa.ForeignKeyConstraint(
+            ["run_id"],
+            ["acquisition_mission_runs.id"],
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["signal_id"],
+            ["external_signals.id"],
+            ondelete="RESTRICT",
+        ),
+        sa.PrimaryKeyConstraint("run_id", "signal_id"),
+        sa.UniqueConstraint("run_id", "ordinal", name="uq_run_signal_ordinal"),
+    )
 
 
 def downgrade() -> None:
+    op.drop_table("acquisition_mission_run_signals")
     op.drop_constraint("uq_external_signal_lineage_key", "external_signals", type_="unique")
     op.drop_constraint("fk_external_signal_mission_run", "external_signals", type_="foreignkey")
     op.drop_column("external_signals", "context_snapshot")
