@@ -140,7 +140,11 @@ async def execute_claimed_mission_run(
 ) -> AcquisitionMissionRun:
     """Collect only a run currently leased by this worker, then atomically finalize its assets."""
     run = await db.get(AcquisitionMissionRun, run_id)
-    if run is None or run.lifecycle_status != "running" or run.lease_owner != worker_id:
+    if (
+        run is None
+        or run.lifecycle_status not in {"running", "cancel_requested"}
+        or run.lease_owner != worker_id
+    ):
         raise ValueError("Mission run is not leased by this worker")
     mission = await db.scalar(
         select(AcquisitionMission)
@@ -171,6 +175,24 @@ async def execute_claimed_mission_run(
         run.terminal_state = "failed"
         run.failure_detail = f"Worker collection failed: {error}"
         run.checkpoints = [*run.checkpoints, "run:worker_error"]
+        run.lease_owner = None
+        run.lease_expires_at = None
+        run.completed_at = func.now()
+        await db.commit()
+        await db.refresh(run)
+        return run
+
+    await db.refresh(run)
+    if run.lifecycle_status == "cancel_requested":
+        run.raw_artifacts = result.raw_artifacts
+        run.context_completeness = result.context_completeness.as_dict()
+        run.checkpoints = [*run.checkpoints, *result.checkpoints, "run:cancelled_at_checkpoint"]
+        run.retry_count = result.retry_count
+        run.transport_requests = transport.transport_requests
+        run.network_requests = transport.network_requests
+        run.lifecycle_status = "cancelled"
+        run.terminal_state = "cancelled"
+        run.failure_detail = "Cancellation took effect after the current collection checkpoint."
         run.lease_owner = None
         run.lease_expires_at = None
         run.completed_at = func.now()

@@ -510,6 +510,16 @@ async def cancel_acquisition_mission_run(
     body: AcquisitionMissionRunControl | None = None,
     db: Annotated[AsyncSession, Depends(get_db)] = None,
 ):
+    run = await db.get(AcquisitionMissionRun, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Acquisition Mission run not found")
+    if run.lifecycle_status == "running":
+        run.lifecycle_status = "cancel_requested"
+        run.control_reason = (body or AcquisitionMissionRunControl()).reason
+        run.checkpoints = [*run.checkpoints, "run:cancel_requested"]
+        await db.commit()
+        await db.refresh(run)
+        return run
     return await _control_queued_run(
         run_id, ("queued", "scheduled"), "cancelled", body or AcquisitionMissionRunControl(), db
     )
