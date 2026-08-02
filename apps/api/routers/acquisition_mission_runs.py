@@ -18,6 +18,7 @@ from apps.api.dependencies import (
 )
 from apps.api.schemas.acquisition_mission import AcquisitionMissionResponse
 from apps.api.schemas.acquisition_mission_run import (
+    AcquisitionMissionDryRunCreate,
     AcquisitionMissionRunCreate,
     AcquisitionMissionRunResponse,
 )
@@ -130,6 +131,104 @@ async def _persist_signal_drafts(
     )
 
 
+def _failed_timeout_result(timeout_seconds: int) -> GitHubMissionResult:
+    return GitHubMissionResult(
+        raw_artifacts=[],
+        signals=[],
+        context_completeness=ContextCompleteness(
+            False,
+            False,
+            False,
+            False,
+            ("issue_page", "comments", "parent_context"),
+        ),
+        checkpoints=["run:timeout"],
+        retry_count=0,
+        terminal_state="failed",
+        failure_detail=(f"Mission exceeded its {timeout_seconds} second time budget."),
+    )
+
+
+@router.post(
+    "/{mission_id}/dry-runs",
+    response_model=AcquisitionMissionRunResponse,
+    status_code=201,
+)
+async def create_acquisition_mission_dry_run(
+    mission_id: uuid.UUID,
+    body: AcquisitionMissionDryRunCreate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    fixture_transport: Annotated[GitHubMissionTransport, Depends(get_github_mission_transport)],
+    live_transport: Annotated[GitHubMissionTransport, Depends(get_github_live_transport)],
+):
+    """Preview a bounded sample without promoting any material into the Evidence Inbox."""
+    mission = await _get_mission_or_404(db, mission_id)
+    source = await db.get(Source, mission.source_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Source not found")
+    config = mission.source_config_version
+    if body.preview_item_limit > mission.item_limit:
+        raise HTTPException(
+            status_code=422,
+            detail="Preview item limit cannot exceed the pinned mission item limit",
+        )
+    if body.preview_request_limit > config.request_policy["request_limit"]:
+        raise HTTPException(
+            status_code=422,
+            detail="Preview request limit cannot exceed the pinned mission request limit",
+        )
+
+    selected_transport = live_transport if body.execution_mode == "live" else fixture_transport
+    bounded_transport = BoundedGitHubMissionTransport(
+        selected_transport,
+        request_limit=body.preview_request_limit,
+    )
+    timeout_seconds = config.request_policy["timeout_seconds"]
+    try:
+        async with asyncio.timeout(timeout_seconds):
+            result = await GitHubMissionAdapter().collect(
+                source.url,
+                config,
+                bounded_transport,
+                item_limit=body.preview_item_limit,
+            )
+    except TimeoutError:
+        result = _failed_timeout_result(timeout_seconds)
+
+    run = AcquisitionMissionRun(
+        mission_id=mission.id,
+        source_config_version_id=config.id,
+        replay_of_run_id=None,
+        execution_mode=f"dry_run:{body.execution_mode}",
+        input_snapshot=_input_snapshot(mission, source),
+        budgets={
+            "request_limit": body.preview_request_limit,
+            "time_limit_seconds": timeout_seconds,
+            "item_limit": body.preview_item_limit,
+            "cost_budget_cents": mission.cost_budget_cents,
+            "preview": True,
+            "estimated_cost_cents": None,
+            "estimated_cost_state": "unknown",
+        },
+        raw_artifacts=result.raw_artifacts,
+        parser_version=(
+            f"{config.extraction_settings['parser']}:{config.extraction_settings['parser_version']}"
+        ),
+        context_completeness=result.context_completeness.as_dict(),
+        checkpoints=result.checkpoints,
+        retry_count=result.retry_count,
+        terminal_state=result.terminal_state,
+        failure_detail=result.failure_detail,
+        transport_requests=bounded_transport.transport_requests,
+        network_requests=bounded_transport.network_requests,
+        external_signal_ids=[],
+    )
+    db.add(run)
+    await db.commit()
+    await db.refresh(run)
+    return run
+
+
 @router.post(
     "/{mission_id}/runs",
     response_model=AcquisitionMissionRunResponse,
@@ -162,21 +261,7 @@ async def create_acquisition_mission_run(
                 item_limit=mission.item_limit,
             )
     except TimeoutError:
-        result = GitHubMissionResult(
-            raw_artifacts=[],
-            signals=[],
-            context_completeness=ContextCompleteness(
-                False,
-                False,
-                False,
-                False,
-                ("issue_page", "comments", "parent_context"),
-            ),
-            checkpoints=["run:timeout"],
-            retry_count=0,
-            terminal_state="failed",
-            failure_detail=(f"Mission exceeded its {timeout_seconds} second time budget."),
-        )
+        result = _failed_timeout_result(timeout_seconds)
     run = AcquisitionMissionRun(
         mission_id=mission.id,
         source_config_version_id=config.id,

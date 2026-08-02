@@ -4,11 +4,21 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class AcquisitionMissionRunCreate(BaseModel):
     execution_mode: Literal["fixture", "live"]
+
+    model_config = {"extra": "forbid"}
+
+
+class AcquisitionMissionDryRunCreate(BaseModel):
+    """A deliberately smaller preview of a pinned mission, before evidence is persisted."""
+
+    execution_mode: Literal["fixture", "live"]
+    preview_item_limit: int = Field(gt=0)
+    preview_request_limit: int = Field(gt=0)
 
     model_config = {"extra": "forbid"}
 
