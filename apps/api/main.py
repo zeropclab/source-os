@@ -14,6 +14,7 @@ from .routers import (
     acquisition_mission_runs,
     acquisition_missions,
     agent_runs,
+    delivery_records,
     experiments,
     export,
     external_signals,
@@ -77,6 +78,9 @@ app.include_router(need_issues.router, prefix="/api/need-issues", tags=["Need Is
 app.include_router(agent_runs.router, prefix="/api/agent-runs", tags=["Agent Runs"])
 app.include_router(experiments.router, prefix="/api/experiments", tags=["Validation Experiments"])
 app.include_router(product_theses.router, prefix="/api/product-theses", tags=["Product Theses"])
+app.include_router(
+    delivery_records.router, prefix="/api/delivery-records", tags=["Delivery Evidence"]
+)
 app.include_router(
     acquisition_missions.router,
     prefix="/api/acquisition-missions",

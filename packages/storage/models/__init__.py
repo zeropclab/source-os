@@ -9,6 +9,7 @@ from .fetch_job import FetchJob
 from .media_asset import MediaAsset
 from .need_issue import (
     BuildAuthorization,
+    DeliveryRecord,
     FeatureDefinition,
     MarketObservation,
     NeedChallenge,
@@ -50,5 +51,6 @@ __all__ = [
     "ProductThesisObservation",
     "FeatureDefinition",
     "BuildAuthorization",
+    "DeliveryRecord",
     "SignalTriageEvent",
 ]

@@ -177,6 +177,34 @@ async def test_feature_definition_requires_validated_need_and_tracking_plan(clie
     assert body["need_issue_id"] == need_id
     assert body["status"] == "defined"
 
+    delivery = await client.post(
+        f"/api/delivery-records/features/{body['id']}/deliveries",
+        json={"branch": "feat/confirmation-board", "implementation_version": "v0.1.0"},
+    )
+    assert delivery.status_code == 201
+    blocked_release = await client.post(f"/api/delivery-records/{delivery.json()['id']}/release")
+    assert blocked_release.status_code == 409
+    assert "acceptance_evidence" in blocked_release.json()["detail"]
+
+    releasable = await client.post(
+        f"/api/delivery-records/features/{body['id']}/deliveries",
+        json={
+            "branch": "feat/confirmation-board",
+            "implementation_version": "v0.1.1",
+            "tests_evidence": "pytest tests/api/test_need_issues.py -q passed",
+            "review_conclusion": "Reviewed: bounded scope is accepted.",
+            "risk": "Manual import is the only supported input.",
+            "migration_evidence": "No schema migration required.",
+            "rollback_evidence": "Disable the board route and retain imported data.",
+            "acceptance_evidence": "Coordinator completed the defined acceptance path.",
+            "tracking_evidence": "follow_up_board_viewed is configured.",
+            "pr_reference": "local-git://feat/confirmation-board",
+        },
+    )
+    released = await client.post(f"/api/delivery-records/{releasable.json()['id']}/release")
+    assert released.status_code == 200
+    assert released.json()["status"] == "released"
+
 
 async def test_need_issue_preserves_signal_provenance_counterevidence_and_definition_history(
     client,

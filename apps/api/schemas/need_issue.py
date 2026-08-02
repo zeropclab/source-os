@@ -125,6 +125,29 @@ class BuildAuthorizationResponse(BuildAuthorizationCreate):
     model_config = {"from_attributes": True}
 
 
+class DeliveryRecordCreate(BaseModel):
+    branch: str = Field(min_length=1)
+    implementation_version: str = Field(min_length=1, max_length=64)
+    tests_evidence: str | None = None
+    review_conclusion: str | None = None
+    risk: str | None = None
+    migration_evidence: str | None = None
+    rollback_evidence: str | None = None
+    acceptance_evidence: str | None = None
+    tracking_evidence: str | None = None
+    pr_reference: str | None = None
+
+
+class DeliveryRecordResponse(DeliveryRecordCreate):
+    id: uuid.UUID
+    feature_definition_id: uuid.UUID
+    status: str
+    created_at: datetime
+    released_at: datetime | None
+
+    model_config = {"from_attributes": True}
+
+
 class ValidationExperimentCreate(BaseModel):
     hypothesis: str = Field(min_length=1)
     audience: str = Field(min_length=1)
