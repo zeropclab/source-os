@@ -19,7 +19,9 @@ class GitHubMissionTransport(Protocol):
     @property
     def network_requests(self) -> int: ...
 
-    async def list_issues(self, owner: str, repo: str, query_terms: list[str]) -> GitHubPage: ...
+    async def list_issues(
+        self, owner: str, repo: str, query_terms: list[str], page: int = 1
+    ) -> GitHubPage: ...
 
     async def list_issue_comments(self, owner: str, repo: str, issue_number: int) -> GitHubPage: ...
 
@@ -56,9 +58,13 @@ class BoundedGitHubMissionTransport:
             raise GitHubRequestBudgetExceededError
         self.transport_requests += 1
 
-    async def list_issues(self, owner: str, repo: str, query_terms: list[str]) -> GitHubPage:
+    async def list_issues(
+        self, owner: str, repo: str, query_terms: list[str], page: int = 1
+    ) -> GitHubPage:
         self._consume_request()
-        return await self._transport.list_issues(owner, repo, query_terms)
+        if page == 1:
+            return await self._transport.list_issues(owner, repo, query_terms)
+        return await self._transport.list_issues(owner, repo, query_terms, page=page)
 
     async def list_issue_comments(self, owner: str, repo: str, issue_number: int) -> GitHubPage:
         self._consume_request()
@@ -165,17 +171,19 @@ class GitHubPublicTransport:
         return response
 
     @staticmethod
-    def _page(response: httpx.Response, items: list[dict]) -> GitHubPage:
+    def _page(response: httpx.Response, items: list[dict], page: int) -> GitHubPage:
         return GitHubPage(
             items=items,
-            page=1,
+            page=page,
             has_next_page='rel="next"' in response.headers.get("link", ""),
         )
 
-    async def list_issues(self, owner: str, repo: str, query_terms: list[str]) -> GitHubPage:
+    async def list_issues(
+        self, owner: str, repo: str, query_terms: list[str], page: int = 1
+    ) -> GitHubPage:
         response = await self._get(
             f"/repos/{owner}/{repo}/issues",
-            {"state": "all", "per_page": 100, "page": 1},
+            {"state": "all", "per_page": 100, "page": page},
         )
         try:
             payload = response.json()
@@ -194,7 +202,7 @@ class GitHubPublicTransport:
                     for term in normalized_terms
                 )
             ]
-        return self._page(response, issues)
+        return self._page(response, issues, page)
 
     async def list_issue_comments(self, owner: str, repo: str, issue_number: int) -> GitHubPage:
         response = await self._get(
@@ -209,7 +217,7 @@ class GitHubPublicTransport:
             ) from exc
         if not isinstance(payload, list):
             raise GitHubTransportError("GitHub issue comments response must be a list.")
-        return self._page(response, [item for item in payload if isinstance(item, dict)])
+        return self._page(response, [item for item in payload if isinstance(item, dict)], 1)
 
 
 class GitHubArtifactReplayTransport:
@@ -221,9 +229,15 @@ class GitHubArtifactReplayTransport:
     def __init__(self, raw_artifacts: list[dict]):
         self._raw_artifacts = raw_artifacts
 
-    async def list_issues(self, owner: str, repo: str, query_terms: list[str]) -> GitHubPage:
+    async def list_issues(
+        self, owner: str, repo: str, query_terms: list[str], page: int = 1
+    ) -> GitHubPage:
         page_artifact = next(
-            (item for item in self._raw_artifacts if item.get("kind") == "issue_page"),
+            (
+                item
+                for item in self._raw_artifacts
+                if item.get("kind") == "issue_page" and item.get("raw", {}).get("page", 1) == page
+            ),
             None,
         )
         if page_artifact is not None:
@@ -234,7 +248,7 @@ class GitHubArtifactReplayTransport:
                 has_next_page=raw.get("has_next_page", False),
             )
         issues = [item["raw"] for item in self._raw_artifacts if item.get("kind") == "issue"]
-        return GitHubPage(items=issues, page=1, has_next_page=False)
+        return GitHubPage(items=issues if page == 1 else [], page=page, has_next_page=False)
 
     async def list_issue_comments(self, owner: str, repo: str, issue_number: int) -> GitHubPage:
         issue_key = f"github:{owner}/{repo}:issue:{issue_number}"

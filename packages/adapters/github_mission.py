@@ -287,10 +287,45 @@ class GitHubMissionAdapter:
                 failure_detail=detail,
             )
 
-        issue_page = issue_fetch.page
-        raw_artifacts.append(_issue_page_artifact(owner, repo, issue_page))
-        checkpoints.append(f"issues:page:{issue_page.page}")
-        if not issue_page.items:
+        issue_pages = [issue_fetch.page]
+        raw_artifacts.append(_issue_page_artifact(owner, repo, issue_fetch.page))
+        checkpoints.append(f"issues:page:{issue_fetch.page.page}")
+        page_limit = config.pagination_context_rules["page_limit"]
+        while issue_pages[-1].has_next_page and len(issue_pages) < page_limit:
+            next_page_number = issue_pages[-1].page + 1
+            next_fetch = await _fetch_page(
+                lambda page=next_page_number: transport.list_issues(
+                    owner, repo, config.query_scope["query_terms"], page=page
+                ),
+                owner=owner,
+                repo=repo,
+                stage=f"issues:page:{next_page_number}",
+                retry_limit=retry_limit,
+            )
+            raw_artifacts.extend(next_fetch.raw_artifacts)
+            checkpoints.extend(next_fetch.checkpoints)
+            retry_count += next_fetch.retry_count
+            if next_fetch.page is None:
+                detail = next_fetch.error_detail or "GitHub issue transport failed."
+                return _result(
+                    raw_artifacts=raw_artifacts,
+                    signals=[],
+                    checkpoints=checkpoints,
+                    retry_count=retry_count,
+                    issue_complete=False,
+                    comments_complete=False,
+                    parent_complete=False,
+                    pagination_complete=False,
+                    missing=["issue_page", "comments", "parent_context"],
+                    terminal_state="failed",
+                    failure_detail=detail,
+                )
+            issue_pages.append(next_fetch.page)
+            raw_artifacts.append(_issue_page_artifact(owner, repo, next_fetch.page))
+            checkpoints.append(f"issues:page:{next_fetch.page.page}")
+
+        issue_entries = [(page, issue) for page in issue_pages for issue in page.items]
+        if not issue_entries:
             return _result(
                 raw_artifacts=raw_artifacts,
                 signals=[],
@@ -299,7 +334,7 @@ class GitHubMissionAdapter:
                 issue_complete=False,
                 comments_complete=False,
                 parent_complete=False,
-                pagination_complete=not issue_page.has_next_page,
+                pagination_complete=not issue_pages[-1].has_next_page,
                 missing=["matching_issues"],
                 terminal_state="empty",
                 failure_detail="No GitHub issues matched the pinned query.",
@@ -309,11 +344,11 @@ class GitHubMissionAdapter:
         missing: list[str] = []
         parent_complete = True
         comments_complete = True
-        pagination_complete = not issue_page.has_next_page
-        if issue_page.has_next_page:
+        pagination_complete = not issue_pages[-1].has_next_page
+        if not pagination_complete:
             _append_unique(missing, "additional_pages")
 
-        for issue in issue_page.items:
+        for issue_page, issue in issue_entries:
             if len(signals) >= item_limit:
                 _append_unique(missing, "item_limit")
                 pagination_complete = False
