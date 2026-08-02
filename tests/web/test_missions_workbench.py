@@ -104,3 +104,24 @@ async def test_delivery_workbench_exposes_review_release_tracking_and_outcome_co
     assert 'id="outcome-decision-form"' in page
     assert "/api/delivery-records/features/${featureId}/workbench" in page
     assert "not proof of product success" in page
+
+
+async def test_pi_agent_workbench_exposes_bounded_evidence_and_operator_review_controls(client):
+    response = await client.get("/agents")
+
+    assert response.status_code == 200
+    page = response.text
+    assert 'id="agent-run-form"' in page
+    assert 'id="agent-signal-ids"' in page
+    assert 'id="agent-max-tokens"' in page
+    assert "/api/agent-runs" in page
+    assert "cannot collect" in page
+
+    detail = await client.get("/agents/11111111-1111-1111-1111-111111111111")
+    assert detail.status_code == 200
+    detail_page = detail.text
+    assert 'id="agent-run-detail"' in detail_page
+    assert 'id="agent-execute-form"' in detail_page
+    assert 'id="agent-cancel-form"' in detail_page
+    assert 'id="agent-decision-form"' in detail_page
+    assert "/api/agent-runs/${runId}" in detail_page

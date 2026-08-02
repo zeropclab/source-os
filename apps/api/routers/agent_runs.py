@@ -32,6 +32,11 @@ def _bundle_hash(bundle: list[dict]) -> str:
     return hashlib.sha256(encoded.encode()).hexdigest()
 
 
+@router.get("/{run_id}", response_model=AgentRunResponse)
+async def get_agent_run(run_id: uuid.UUID, db: Annotated[AsyncSession, Depends(get_db)]):
+    return await _run_or_404(db, run_id)
+
+
 @router.post("", response_model=AgentRunResponse, status_code=201)
 async def create_agent_run(
     body: AgentRunCreate,
