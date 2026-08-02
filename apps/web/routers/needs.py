@@ -6,6 +6,12 @@ from fastapi.responses import HTMLResponse
 from ..templating import templates
 
 router = APIRouter(prefix="/needs", tags=["Web Needs"])
+feature_router = APIRouter(prefix="/features", tags=["Web Features"])
+
+
+@feature_router.get("/create", response_class=HTMLResponse)
+async def create_feature_definition(request: Request):
+    return templates.TemplateResponse(request, "features/create.html", {"title": "Define Feature"})
 
 
 @router.get("/create", response_class=HTMLResponse)

@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block title %}Define Feature{% endblock %}
+
+{% block content %}
+<header class="workbench-heading">
+    <div>
+        <p class="eyebrow">Build contract</p>
+        <h1>Feature Definition</h1>
+        <p>
+            A build authorization is required. This form records implementation and tracking
+            contracts; it does not infer validation or product success.
+        </p>
+    </div>
+</header>
+
+<div id="feature-message" role="status"></div>
+
+<form id="feature-definition-form">
+    <label>Need Issue ID<input id="need-id" required></label>
+    <label>Product Thesis ID<input id="product-thesis-id" required></label>
+    <label>Title<input id="feature-title" required></label>
+    <label>User task<textarea id="user-task" required></textarea></label>
+    <label>Scope<textarea id="feature-scope" required></textarea></label>
+    <label>Explicit exclusions <small>(one per line)</small><textarea id="exclusions" required></textarea></label>
+    <label>Acceptance criteria <small>(one per line)</small><textarea id="acceptance" required></textarea></label>
+    <label>Tracking events <small>(one per line)</small><textarea id="tracking-events" required></textarea></label>
+    <label>Tracking properties <small>(one per line)</small><textarea id="tracking-properties" required></textarea></label>
+    <label>Success metric<textarea id="success-metric" required></textarea></label>
+    <label>Negative metric<textarea id="negative-metric" required></textarea></label>
+    <label>Rollback condition<textarea id="rollback-condition" required></textarea></label>
+    <button>Create Feature Definition</button>
+</form>
+
+<script>
+    const q = new URLSearchParams(location.search);
+    const needId = q.get("need") || "";
+    document.getElementById("need-id").value = needId;
+
+    const lines = (id) => document.getElementById(id).value.split("\\n").map((value) => value.trim()).filter(Boolean);
+    async function request(url, options = {}) {
+        const response = await fetch(url, options);
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : JSON.stringify(data));
+        return data;
+    }
+
+    document.getElementById("feature-definition-form").onsubmit = async (event) => {
+        event.preventDefault();
+        const value = (id) => document.getElementById(id).value.trim();
+        try {
+            const feature = await request(`/api/need-issues/${value("need-id")}/features`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    product_thesis_id: value("product-thesis-id"),
+                    title: value("feature-title"), user_task: value("user-task"), scope: value("feature-scope"),
+                    explicit_exclusions: lines("exclusions"), acceptance_criteria: lines("acceptance"),
+                    tracking_events: lines("tracking-events"), tracking_properties: lines("tracking-properties"),
+                    success_metric: value("success-metric"), negative_metric: value("negative-metric"),
+                    rollback_condition: value("rollback-condition"),
+                }),
+            });
+            document.getElementById("feature-message").textContent = `Feature ${feature.id} defined. It still requires delivery and result data.`;
+        } catch (error) {
+            document.getElementById("feature-message").textContent = error.message;
+        }
+    };
+</script>
+{% endblock %}
