@@ -47,6 +47,25 @@ class NeedIssueTransition(BaseModel):
     status: NeedStatus
     reason: str | None = Field(default=None, min_length=1)
     new_evidence: NeedEvidenceCreate | None = None
+    override_gate: bool = False
+
+
+class NeedChallengeCreate(BaseModel):
+    basis: str = Field(min_length=1)
+    unknowns: list[str] = Field(min_length=1)
+    falsification_condition: str = Field(min_length=1)
+    smallest_next_action: str = Field(min_length=1)
+    assessment: Literal[
+        "temporarily-supported", "falsified", "insufficient-evidence", "genuine-disagreement"
+    ]
+
+
+class NeedChallengeResponse(NeedChallengeCreate):
+    id: uuid.UUID
+    need_issue_id: uuid.UUID
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
 
 
 class NeedIssueUpdate(BaseModel):

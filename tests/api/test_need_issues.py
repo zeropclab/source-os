@@ -55,6 +55,7 @@ async def test_feature_definition_requires_validated_need_and_tracking_plan(clie
             "context": "one day before an appointment",
             "problem": "they manually chase confirmations through multiple channels",
             "desired_outcome": "know which appointments need follow-up",
+            "unknowns": ["How many clinics already use confirmation automation"],
             "next_validation_action": "test the workflow with two clinics",
         },
     )
@@ -70,6 +71,28 @@ async def test_feature_definition_requires_validated_need_and_tracking_plan(clie
         },
     )
     assert evidence.status_code == 201
+
+    counter = await client.post(
+        f"/api/need-issues/{need_id}/evidence",
+        json={
+            "reference_type": "interview_note",
+            "reference_uri": "notes://clinic-counterexample/1",
+            "role": "counter",
+            "excerpt": "One clinic already has automated confirmations.",
+        },
+    )
+    challenge = await client.post(
+        f"/api/need-issues/{need_id}/challenges",
+        json={
+            "basis": "The workflow may be solved by existing scheduling software.",
+            "unknowns": ["How many clinics lack automation"],
+            "falsification_condition": "Two target clinics use automation without this problem.",
+            "smallest_next_action": "Interview one clinic with scheduling software.",
+            "assessment": "insufficient-evidence",
+        },
+    )
+    assert counter.status_code == 201
+    assert challenge.status_code == 201
 
     validated = await client.post(
         f"/api/need-issues/{need_id}/transition",
@@ -231,3 +254,96 @@ async def test_need_issue_requires_reason_and_new_evidence_to_reopen_from_dorman
         "No reachable operators this month.",
         "A new contact is available.",
     ]
+
+
+async def test_discovery_validation_gate_requires_counterevidence_unknowns_and_a_challenge(client):
+    created = await client.post(
+        "/api/need-issues",
+        json={
+            "title": "Operators repeatedly reconcile exports",
+            "target_actor": "small business operators",
+            "context": "during a monthly close",
+            "problem": "they compare exports manually to find mismatches",
+            "desired_outcome": "find mismatches without manual comparison",
+            "unknowns": ["Whether this is independently repeated"],
+            "next_validation_action": "interview an operator about a recent close",
+        },
+    )
+    need_id = created.json()["id"]
+
+    supporting = await client.post(
+        f"/api/need-issues/{need_id}/evidence",
+        json={
+            "reference_type": "interview_note",
+            "reference_uri": "obsidian://interview/1",
+            "role": "supporting",
+        },
+    )
+    assert supporting.status_code == 201
+
+    blocked = await client.post(
+        f"/api/need-issues/{need_id}/transition",
+        json={"status": "discovery-validated"},
+    )
+    assert blocked.status_code == 409
+    assert (
+        blocked.json()["detail"]
+        == "Discovery validation gate is incomplete: counter evidence, challenge"
+    )
+
+    counter = await client.post(
+        f"/api/need-issues/{need_id}/evidence",
+        json={
+            "reference_type": "counterexample",
+            "reference_uri": "obsidian://counter/1",
+            "role": "counter",
+        },
+    )
+    challenge = await client.post(
+        f"/api/need-issues/{need_id}/challenges",
+        json={
+            "basis": "One operator may not represent an independent recurring problem.",
+            "unknowns": ["How often the workaround occurs"],
+            "falsification_condition": "Two independent operators report no manual reconciliation.",
+            "smallest_next_action": (
+                "Ask one independent operator for a recent reconciliation example."
+            ),
+            "assessment": "insufficient-evidence",
+        },
+    )
+    assert counter.status_code == 201
+    assert challenge.status_code == 201
+
+    validated = await client.post(
+        f"/api/need-issues/{need_id}/transition",
+        json={"status": "discovery-validated", "reason": "Gate requirements are now reviewable."},
+    )
+    assert validated.status_code == 200
+
+
+async def test_operator_override_of_an_incomplete_discovery_gate_is_explicitly_audited(client):
+    created = await client.post(
+        "/api/need-issues",
+        json={
+            "title": "A constrained pilot needs a decision",
+            "target_actor": "pilot operators",
+            "context": "during a paid pilot",
+            "problem": "the pilot workflow is blocked",
+            "desired_outcome": "decide whether to test the workaround",
+            "unknowns": ["Whether the pilot is representative"],
+            "next_validation_action": "run a constrained pilot observation",
+        },
+    )
+    need_id = created.json()["id"]
+
+    overridden = await client.post(
+        f"/api/need-issues/{need_id}/transition",
+        json={
+            "status": "discovery-validated",
+            "override_gate": True,
+            "reason": "A time-bounded paid pilot already supplies the next reality contact.",
+        },
+    )
+    assert overridden.status_code == 200
+    events = await client.get(f"/api/need-issues/{need_id}/status-events")
+    assert events.json()["items"][-1]["reason"].startswith("OVERRIDE: ")

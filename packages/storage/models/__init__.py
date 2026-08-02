@@ -9,6 +9,7 @@ from .fetch_job import FetchJob
 from .media_asset import MediaAsset
 from .need_issue import (
     FeatureDefinition,
+    NeedChallenge,
     NeedEvidence,
     NeedIssue,
     NeedIssueStatusEvent,
@@ -35,6 +36,7 @@ __all__ = [
     "MediaAsset",
     "NeedIssue",
     "NeedEvidence",
+    "NeedChallenge",
     "NeedIssueVersion",
     "NeedIssueStatusEvent",
     "FeatureDefinition",
