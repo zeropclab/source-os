@@ -11,6 +11,7 @@ from apps.web.main import web_app
 
 from .config import settings
 from .routers import (
+    acquisition_mission_runs,
     acquisition_missions,
     export,
     external_signals,
@@ -74,6 +75,16 @@ app.include_router(
     acquisition_missions.router,
     prefix="/api/acquisition-missions",
     tags=["Acquisition Missions"],
+)
+app.include_router(
+    acquisition_mission_runs.router,
+    prefix="/api/acquisition-missions",
+    tags=["Acquisition Mission Runs"],
+)
+app.include_router(
+    acquisition_mission_runs.read_router,
+    prefix="/api/acquisition-mission-runs",
+    tags=["Acquisition Mission Runs"],
 )
 app.include_router(
     external_signals.router, prefix="/api/external-signals", tags=["External Signals"]

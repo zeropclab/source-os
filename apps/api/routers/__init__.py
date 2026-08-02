@@ -1,4 +1,5 @@
 from . import (
+    acquisition_mission_runs,
     acquisition_missions,
     export,
     health,
@@ -12,6 +13,7 @@ from . import (
 
 __all__ = [
     "acquisition_missions",
+    "acquisition_mission_runs",
     "health",
     "sources",
     "items",
