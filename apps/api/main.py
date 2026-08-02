@@ -18,6 +18,7 @@ from .routers import (
     items,
     jobs,
     need_issues,
+    source_config_versions,
     sources,
 )
 
@@ -49,6 +50,11 @@ app.add_middleware(
 # API routes
 app.include_router(health.router, tags=["Health"])
 app.include_router(sources.router, prefix="/api/sources", tags=["Sources"])
+app.include_router(
+    source_config_versions.router,
+    prefix="/api/sources",
+    tags=["Source Configuration Versions"],
+)
 app.include_router(items.router, prefix="/api/items", tags=["Items"])
 app.include_router(jobs.router, prefix="/api/jobs", tags=["Jobs"])
 app.include_router(export.router, prefix="/api/export", tags=["Export"])

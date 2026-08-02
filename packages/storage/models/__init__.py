@@ -6,10 +6,12 @@ from .fetch_job import FetchJob
 from .media_asset import MediaAsset
 from .need_issue import FeatureDefinition, NeedEvidence, NeedIssue
 from .source import Source
+from .source_config_version import SourceConfigVersion
 from .source_item import SourceItem
 
 __all__ = [
     "Source",
+    "SourceConfigVersion",
     "AcquisitionMission",
     "SourceItem",
     "ContentVersion",
