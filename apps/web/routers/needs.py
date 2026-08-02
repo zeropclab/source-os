@@ -10,6 +10,11 @@ feature_router = APIRouter(prefix="/features", tags=["Web Features"])
 product_thesis_router = APIRouter(prefix="/product-theses", tags=["Web Product Theses"])
 
 
+@router.get("", response_class=HTMLResponse)
+async def need_library(request: Request):
+    return templates.TemplateResponse(request, "needs/list.html", {"title": "Need Library"})
+
+
 @feature_router.get("/create", response_class=HTMLResponse)
 async def create_feature_definition(request: Request):
     return templates.TemplateResponse(request, "features/create.html", {"title": "Define Feature"})

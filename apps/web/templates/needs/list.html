@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Need Library{% endblock %}
+{% block content %}
+<header class="workbench-heading">
+    <div>
+        <p class="eyebrow">Problem hypotheses, not a demand leaderboard</p>
+        <h1>Need Library</h1>
+        <p>每个条目都只是可证伪的内部问题定义。打开它，检查证据、反证、未知项和下一现实行动。</p>
+    </div>
+    <a href="/observations" role="button" class="secondary">Record observation</a>
+</header>
+
+<div id="need-library-message" role="status" aria-live="polite"></div>
+<section>
+    <div class="grid">
+        <label>Status
+            <select id="need-status-filter">
+                <option value="">All statuses</option>
+                <option value="captured">Captured</option>
+                <option value="triaged">Triaged</option>
+                <option value="evidence-backed">Evidence-backed</option>
+                <option value="discovery-validated">Discovery-validated</option>
+                <option value="dormant">Dormant</option>
+                <option value="rejected">Rejected</option>
+            </select>
+        </label>
+        <div><button id="refresh-need-library" type="button" class="secondary outline">Refresh library</button></div>
+    </div>
+    <p><small>Evidence counts describe stored references only. They do not establish payment, retention, market size, or profit.</small></p>
+    <div id="need-library"><p>Loading Need Issues…</p></div>
+</section>
+
+<script>
+const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (character) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[character]));
+async function loadNeedLibrary() {
+    const status = document.getElementById('need-status-filter').value;
+    const endpoint = `/api/need-issues?page=1&page_size=100${status ? `&status=${encodeURIComponent(status)}` : ''}`;
+    const target = document.getElementById('need-library');
+    try {
+        const response = await fetch(endpoint);
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail || 'Could not load Need Library');
+        if (!data.items.length) {
+            target.innerHTML = '<p><em>No Need Issues match this view. Record and accept a reality signal before defining one.</em></p>';
+            return;
+        }
+        target.innerHTML = `<div class="evidence-list">${data.items.map((need) => `<article><header><strong>${escapeHtml(need.title)}</strong> <span class="badge">${escapeHtml(need.status)}</span></header><p>${escapeHtml(need.problem)}</p><p><small>Actor: ${escapeHtml(need.target_actor)} · Evidence references: ${need.evidence_count} · Definition v${need.definition_version}</small></p><p><strong>Next reality action:</strong> ${escapeHtml(need.next_validation_action)}</p><a href="/needs/${encodeURIComponent(need.id)}" role="button" class="secondary">Open validation workbench</a></article>`).join('')}</div>`;
+    } catch (error) {
+        target.innerHTML = `<p class="failure-detail">${escapeHtml(error.message)}</p>`;
+    }
+}
+document.getElementById('need-status-filter').addEventListener('change', loadNeedLibrary);
+document.getElementById('refresh-need-library').addEventListener('click', loadNeedLibrary);
+loadNeedLibrary();
+</script>
+{% endblock %}

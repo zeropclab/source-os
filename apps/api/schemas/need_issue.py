@@ -332,3 +332,10 @@ class NeedIssueResponse(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class NeedIssueListResponse(BaseModel):
+    items: list[NeedIssueResponse]
+    total: int
+    page: int
+    page_size: int

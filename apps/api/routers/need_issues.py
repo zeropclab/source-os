@@ -3,7 +3,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,6 +17,7 @@ from apps.api.schemas.need_issue import (
     NeedEvidenceResponse,
     NeedIssueCreate,
     NeedIssueFromAcceptedSignalCreate,
+    NeedIssueListResponse,
     NeedIssueResponse,
     NeedIssueTransition,
     NeedIssueUpdate,
@@ -146,6 +147,34 @@ async def create_need_issue(body: NeedIssueCreate, db: Annotated[AsyncSession, D
     await db.commit()
     await db.refresh(need_issue)
     return await _response(need_issue, db)
+
+
+@router.get("", response_model=NeedIssueListResponse)
+async def list_need_issues(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    status: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+):
+    query = select(NeedIssue)
+    count_query = select(func.count(NeedIssue.id))
+    if status is not None:
+        query = query.where(NeedIssue.status == status)
+        count_query = count_query.where(NeedIssue.status == status)
+    total = await db.scalar(count_query) or 0
+    needs = list(
+        await db.scalars(
+            query.order_by(NeedIssue.updated_at.desc(), NeedIssue.id.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+    )
+    return NeedIssueListResponse(
+        items=[await _response(need, db) for need in needs],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.get("/{need_issue_id}", response_model=NeedIssueResponse)
