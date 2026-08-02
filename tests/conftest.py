@@ -8,7 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from packages.storage.database import Base, database_connection_params
 
-TEST_DB = os.getenv("DATABASE_URL", "").replace("sourceos", "sourceos_test")
+TEST_DB = os.getenv(
+    "DATABASE_URL", "postgresql+asyncpg://postgres:sourceos@localhost:5432/sourceos_test"
+)
 
 
 async def _ensure_test_db():
