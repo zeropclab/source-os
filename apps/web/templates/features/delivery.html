@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+
+{% block title %}Review and Release Feature{% endblock %}
+
+{% block content %}
+<header class="workbench-heading">
+    <div>
+        <p class="eyebrow">Delivery and learning contract</p>
+        <h1>Feature Delivery Workbench</h1>
+        <p>
+            Record review and release evidence before release, then record outcome facts against
+            the Feature tracking plan. Stored records are not proof of product success.
+        </p>
+    </div>
+</header>
+
+<div id="delivery-message" role="status" aria-live="polite"></div>
+<article id="delivery-workbench"><p>Loading Feature delivery workbench…</p></article>
+
+<section class="workbench-grid">
+    <article>
+        <header><strong>Record delivery review</strong></header>
+        <form id="delivery-record-form">
+            <div class="grid">
+                <label>Branch<input id="delivery-branch" required></label>
+                <label>Implementation version<input id="delivery-version" required></label>
+            </div>
+            <label>Tests evidence<textarea id="delivery-tests"></textarea></label>
+            <label>Review conclusion<textarea id="delivery-review"></textarea></label>
+            <label>Risk<textarea id="delivery-risk"></textarea></label>
+            <label>Migration evidence<textarea id="delivery-migration"></textarea></label>
+            <label>Rollback evidence<textarea id="delivery-rollback"></textarea></label>
+            <label>Acceptance evidence<textarea id="delivery-acceptance"></textarea></label>
+            <label>Tracking evidence<textarea id="delivery-tracking"></textarea></label>
+            <label>PR reference<input id="delivery-pr-reference"></label>
+            <button type="submit">Record delivery</button>
+        </form>
+    </article>
+
+    <article>
+        <header><strong>Release after review</strong></header>
+        <form id="release-delivery-form">
+            <label>Delivery<select id="delivery-id-release" required></select></label>
+            <button type="submit" class="secondary">Release delivery</button>
+        </form>
+    </article>
+
+    <article>
+        <header><strong>Record tracked outcome</strong></header>
+        <form id="feature-outcome-form">
+            <label>Released delivery<select id="delivery-id-outcome" required></select></label>
+            <label>Kind<select id="outcome-kind"><option value="activation">Activation</option><option value="repeated_use">Repeated use</option><option value="payment">Payment</option><option value="refund">Refund</option><option value="churn">Churn</option><option value="support">Support</option><option value="cost">Cost</option></select></label>
+            <label>Observation<textarea id="outcome-observation" required></textarea></label>
+            <div class="grid"><label>Amount cents<input id="outcome-amount" type="number"></label><label>Operator minutes<input id="outcome-minutes" type="number" min="0"></label></div>
+            <label>Cost category<input id="outcome-cost-category"></label>
+            <button type="submit">Record outcome</button>
+        </form>
+    </article>
+
+    <article>
+        <header><strong>Decide from outcomes</strong></header>
+        <form id="outcome-decision-form">
+            <label>Released delivery<select id="delivery-id-decision" required></select></label>
+            <label>Decision<select id="outcome-decision"><option value="retain">Retain</option><option value="iterate">Iterate</option><option value="rollback">Rollback</option><option value="stop">Stop</option></select></label>
+            <label>Threshold comparison<textarea id="threshold-comparison" required></textarea></label>
+            <label>Contribution margin cents<input id="contribution-margin" type="number" required></label>
+            <label>Rationale<textarea id="outcome-rationale" required></textarea></label>
+            <button type="submit" class="contrast">Record outcome decision</button>
+        </form>
+    </article>
+</section>
+
+<script>
+    const featureId = '{{ feature_id }}';
+    const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", "\"": "&quot;" }[character]));
+    const message = (text, kind = "success") => { document.getElementById("delivery-message").innerHTML = `<article class="message-${kind}">${escapeHtml(text)}</article>`; };
+    async function request(url, options = {}) { const response = await fetch(url, options); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : JSON.stringify(data)); return data; }
+    const value = (id) => document.getElementById(id).value.trim();
+    const optionalNumber = (id) => { const input = value(id); return input === "" ? null : Number(input); };
+    const deliverySelects = ["delivery-id-release", "delivery-id-outcome", "delivery-id-decision"];
+    function setDeliveryOptions(deliveries) { const options = deliveries.map((delivery) => `<option value="${escapeHtml(delivery.id)}">${escapeHtml(delivery.implementation_version)} · ${escapeHtml(delivery.status)}</option>`).join(""); deliverySelects.forEach((id) => { document.getElementById(id).innerHTML = options || '<option value="">No delivery recorded</option>'; }); }
+    async function loadWorkbench() {
+        try {
+            const workbench = await request(`/api/delivery-records/features/${featureId}/workbench`);
+            const feature = workbench.feature_definition;
+            const deliveries = workbench.deliveries.map((delivery) => `<li><strong>${escapeHtml(delivery.implementation_version)}</strong> · ${escapeHtml(delivery.status)} · outcomes: ${delivery.outcomes.length} · decision: ${escapeHtml(delivery.outcome_decision?.decision || "not recorded")}</li>`).join("") || "<li>No delivery records.</li>";
+            const gaps = workbench.gaps.map((gap) => `<li>${escapeHtml(gap)}</li>`).join("") || "<li>No workflow gaps reported.</li>";
+            document.getElementById("delivery-workbench").innerHTML = `<header><strong>${escapeHtml(feature.title)}</strong> <span class="badge">${escapeHtml(feature.status)}</span></header><p><strong>User task:</strong> ${escapeHtml(feature.user_task)}</p><p><strong>Tracking:</strong> ${feature.tracking_events.map(escapeHtml).join(", ")}</p><p><strong>Success:</strong> ${escapeHtml(feature.success_metric)}</p><p><strong>Negative:</strong> ${escapeHtml(feature.negative_metric)}</p><p><strong>Rollback:</strong> ${escapeHtml(feature.rollback_condition)}</p><h3>Deliveries</h3><ul>${deliveries}</ul><h3>Workflow gaps</h3><ul>${gaps}</ul>`;
+            setDeliveryOptions(workbench.deliveries);
+        } catch (error) { document.getElementById("delivery-workbench").innerHTML = `<p class="failure-detail">${escapeHtml(error.message)}</p>`; }
+    }
+    document.getElementById("delivery-record-form").onsubmit = async (event) => { event.preventDefault(); try { await request(`/api/delivery-records/features/${featureId}/deliveries`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ branch: value("delivery-branch"), implementation_version: value("delivery-version"), tests_evidence: value("delivery-tests") || null, review_conclusion: value("delivery-review") || null, risk: value("delivery-risk") || null, migration_evidence: value("delivery-migration") || null, rollback_evidence: value("delivery-rollback") || null, acceptance_evidence: value("delivery-acceptance") || null, tracking_evidence: value("delivery-tracking") || null, pr_reference: value("delivery-pr-reference") || null }) }); message("Delivery recorded. Release remains blocked until required review evidence exists."); await loadWorkbench(); } catch (error) { message(error.message, "error"); } };
+    document.getElementById("release-delivery-form").onsubmit = async (event) => { event.preventDefault(); try { await request(`/api/delivery-records/${value("delivery-id-release")}/release`, { method: "POST" }); message("Delivery released. Outcome data can now be recorded."); await loadWorkbench(); } catch (error) { message(error.message, "error"); } };
+    document.getElementById("feature-outcome-form").onsubmit = async (event) => { event.preventDefault(); try { await request(`/api/feature-outcomes/deliveries/${value("delivery-id-outcome")}/outcomes`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: document.getElementById("outcome-kind").value, properties: {}, observation: value("outcome-observation"), amount_cents: optionalNumber("outcome-amount"), operator_minutes: optionalNumber("outcome-minutes"), cost_category: value("outcome-cost-category") || null }) }); message("Outcome fact recorded. It is not proof of retention or profitability by itself."); await loadWorkbench(); } catch (error) { message(error.message, "error"); } };
+    document.getElementById("outcome-decision-form").onsubmit = async (event) => { event.preventDefault(); try { await request(`/api/feature-outcomes/deliveries/${value("delivery-id-decision")}/decision`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decision: document.getElementById("outcome-decision").value, threshold_comparison: value("threshold-comparison"), contribution_margin_cents: Number(value("contribution-margin")), rationale: value("outcome-rationale") }) }); message("Outcome decision recorded against the declared thresholds."); await loadWorkbench(); } catch (error) { message(error.message, "error"); } };
+    loadWorkbench();
+</script>
+{% endblock %}

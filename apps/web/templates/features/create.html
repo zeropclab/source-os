@@ -62,7 +62,7 @@
                     rollback_condition: value("rollback-condition"),
                 }),
             });
-            document.getElementById("feature-message").textContent = `Feature ${feature.id} defined. It still requires delivery and result data.`;
+            document.getElementById("feature-message").innerHTML = `Feature ${feature.id} defined. <a href="/features/${encodeURIComponent(feature.id)}/delivery">Open delivery workbench</a>.`;
         } catch (error) {
             document.getElementById("feature-message").textContent = error.message;
         }

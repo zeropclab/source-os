@@ -15,6 +15,15 @@ async def create_feature_definition(request: Request):
     return templates.TemplateResponse(request, "features/create.html", {"title": "Define Feature"})
 
 
+@feature_router.get("/{feature_id}/delivery", response_class=HTMLResponse)
+async def feature_delivery_workbench(request: Request, feature_id: str):
+    return templates.TemplateResponse(
+        request,
+        "features/delivery.html",
+        {"title": "Review and Release Feature", "feature_id": feature_id},
+    )
+
+
 @product_thesis_router.get("/{thesis_id}", response_class=HTMLResponse)
 async def product_thesis_workbench(request: Request, thesis_id: str):
     return templates.TemplateResponse(
