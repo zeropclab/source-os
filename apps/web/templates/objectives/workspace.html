@@ -28,6 +28,10 @@
         <header><strong>Evidence-cited Assessment</strong></header>
         <p>这是智能体或操作员基于证据的判断，不是已验证的市场需求。</p>
         <ul id="assessments"></ul>
+        <p>已记录反证（尚未建立强度排序）</p>
+        <p id="strongest-counterevidence">尚无已记录反证。</p>
+        <p>尚未解决的未知项</p>
+        <ul id="assessment-unknowns"></ul>
         <p>Need Hypothesis（仅草稿）</p>
         <ul id="need-hypotheses"></ul>
     </article>
@@ -114,12 +118,21 @@
             '#acquisition-plans',
             workspace.plans.map((plan) => {
                 const runCount = Object.values(plan.mission_runs).flat().length;
-                return `v${plan.version}: ${plan.question} · ${plan.missions.length} missions / ${runCount} runs`;
+                const revision = plan.revision ? ` · 差异：${plan.revision.reason}` : '';
+                return `v${plan.version}: ${plan.question} · ${plan.missions.length} missions / ${runCount} runs${revision}`;
             }),
         );
         renderList(
             '#assessments',
-            workspace.assessments.map((assessment) => `${assessment.kind}: ${assessment.statement}`),
+            workspace.assessments.map((assessment) => `${assessment.kind}: ${assessment.statement} · 引用：${assessment.evidence_ids.join(', ') || assessment.assessment_ids.join(', ')}`),
+        );
+        const counterevidence = workspace.assessments.find((assessment) => assessment.kind === 'counterevidence');
+        document.querySelector('#strongest-counterevidence').textContent = counterevidence
+            ? `${counterevidence.statement} · 引用：${counterevidence.evidence_ids.join(', ')}`
+            : '尚无已记录反证。';
+        renderList(
+            '#assessment-unknowns',
+            workspace.assessments.flatMap((assessment) => assessment.unknowns),
         );
         renderList(
             '#need-hypotheses',
