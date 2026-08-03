@@ -400,6 +400,21 @@ async def create_discovery_assessment(
         raise HTTPException(
             status_code=422, detail="Assessment cites an unknown evidence candidate"
         )
+    upstream_assessment_ids = set(body.assessment_ids)
+    if upstream_assessment_ids and len(
+        (
+            await db.scalars(
+                select(DiscoveryAssessment.id).where(
+                    DiscoveryAssessment.id.in_(upstream_assessment_ids),
+                    DiscoveryAssessment.objective_id == objective_id,
+                )
+            )
+        ).all()
+    ) != len(upstream_assessment_ids):
+        raise HTTPException(
+            status_code=422,
+            detail="Assessment cites an upstream Assessment outside this Objective",
+        )
     version = (
         await db.scalar(
             select(func.max(DiscoveryAssessment.version)).where(

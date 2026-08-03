@@ -28,6 +28,8 @@ async def test_objective_workspace_page_loads_the_durable_workspace_contract(cli
     assert "校准下一次判断" in page
     assert 'id="assessments-panel"' in page
     assert 'id="agent-runs-panel"' in page
+    assert 'id="agent-proposals"' in page
+    assert "run.output?.proposal" in page
     assert 'id="evidence-panel"' in page
     assert 'id="approval-panel"' in page
     assert 'id="decision-record-panel"' in page

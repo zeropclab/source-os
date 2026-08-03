@@ -16,6 +16,7 @@ from apps.api.schemas.external_signal import (
     SignalTriageCreate,
 )
 from packages.storage.models.external_signal import ExternalSignal, SignalTriageEvent
+from packages.storage.models.source import Source
 
 router = APIRouter()
 inbox_router = APIRouter()
@@ -41,6 +42,8 @@ async def create_external_signal(
     body: ExternalSignalCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
+    if body.source_id is not None and await db.get(Source, body.source_id) is None:
+        raise HTTPException(status_code=422, detail="External Signal source does not exist")
     signal = ExternalSignal(**body.model_dump())
     db.add(signal)
     await db.commit()

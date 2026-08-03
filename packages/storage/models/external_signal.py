@@ -20,6 +20,9 @@ class ExternalSignal(Base):
         ForeignKey("acquisition_mission_runs.id", ondelete="RESTRICT"),
         nullable=True,
     )
+    source_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("sources.id", ondelete="RESTRICT"), nullable=True
+    )
     lineage_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     raw_artifact_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_label: Mapped[str] = mapped_column(Text, nullable=False)

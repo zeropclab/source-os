@@ -12,6 +12,7 @@ async def test_objective_agent_run_pins_boundary_and_rejects_blocked_objective(c
     signal = await client.post(
         "/api/external-signals",
         json={
+            "source_id": str(source.id),
             "source_label": "Public discussion",
             "original_material": "I reconcile reports each Friday.",
             "observed_at": datetime.now(UTC).isoformat(),
@@ -58,6 +59,7 @@ async def test_objective_agent_run_is_rejected_at_execution_when_boundary_is_no_
     signal = await client.post(
         "/api/external-signals",
         json={
+            "source_id": str(source.id),
             "source_label": "Public discussion",
             "original_material": "I reconcile reports each Friday.",
             "observed_at": datetime.now(UTC).isoformat(),
@@ -94,6 +96,7 @@ async def test_objective_agent_run_returns_a_structured_assessment_proposal(clie
     signal = await client.post(
         "/api/external-signals",
         json={
+            "source_id": str(source.id),
             "source_label": "Public discussion",
             "original_material": "I reconcile reports each Friday.",
             "observed_at": datetime.now(UTC).isoformat(),
@@ -140,6 +143,7 @@ async def test_plan_bound_agent_run_can_only_return_a_structured_revision_propos
     signal = await client.post(
         "/api/external-signals",
         json={
+            "source_id": str(source.id),
             "source_label": "Public discussion",
             "original_material": "I reconcile reports each Friday.",
             "observed_at": datetime.now(UTC).isoformat(),
@@ -155,7 +159,7 @@ async def test_plan_bound_agent_run_can_only_return_a_structured_revision_propos
             "model_version": "pi-faux-v1",
             "prompt_version": "discovery-plan-revision-v1",
             "max_tool_calls": 1,
-            "max_tokens": 500,
+            "max_tokens": 1_000,
             "max_cost_cents": 0,
             "max_time_minutes": 5,
             "acquisition_plan_id": plan.json()["id"],
@@ -168,6 +172,8 @@ async def test_plan_bound_agent_run_can_only_return_a_structured_revision_propos
     assert run.status_code == 201
     assert run.json()["acquisition_plan_id"] == plan.json()["id"]
     assert run.json()["input_context"]["plan"]["id"] == plan.json()["id"]
+    assert completed.status_code == 200
+    assert completed.json()["status"] == "completed", completed.json()["errors"]
     assert completed.json()["output"]["proposal"] == {
         "contract": "acquisition_plan_revision_proposal.v1",
         "predecessor_plan_id": plan.json()["id"],
@@ -185,6 +191,7 @@ async def test_agent_run_idempotency_key_cannot_cross_discovery_objective_bounda
     signal = await client.post(
         "/api/external-signals",
         json={
+            "source_id": str(source.id),
             "source_label": "Public discussion",
             "original_material": "I reconcile reports each Friday.",
             "observed_at": datetime.now(UTC).isoformat(),
@@ -211,3 +218,41 @@ async def test_agent_run_idempotency_key_cannot_cross_discovery_objective_bounda
     assert created.status_code == 201
     assert conflict.status_code == 409
     assert conflict.json()["detail"] == "Agent Run idempotency key belongs to another Objective"
+
+
+async def test_objective_agent_run_rejects_evidence_outside_approved_source_boundary(client, db):
+    approved_source = await create_source(db)
+    unapproved_source = await create_source(db)
+    objective = await client.post(
+        "/api/discovery-objectives", json=objective_payload(approved_source.id)
+    )
+    signal = await client.post(
+        "/api/external-signals",
+        json={
+            "source_id": str(unapproved_source.id),
+            "source_label": "Other public discussion",
+            "original_material": "This source is not approved for this objective.",
+            "observed_at": datetime.now(UTC).isoformat(),
+            "observation": "An out-of-bound observation is reported.",
+        },
+    )
+
+    rejected = await client.post(
+        f"/api/discovery-objectives/{objective.json()['id']}/agent-runs",
+        json={
+            "evidence_signal_ids": [signal.json()["id"]],
+            "task_instruction": "Return a structured assessment proposal only.",
+            "idempotency_key": "out-of-bound-evidence",
+            "model_version": "pi-faux-v1",
+            "prompt_version": "discovery-assessment-v1",
+            "max_tool_calls": 1,
+            "max_tokens": 500,
+            "max_cost_cents": 0,
+        },
+    )
+
+    assert signal.status_code == 201
+    assert rejected.status_code == 422
+    assert rejected.json()["detail"] == (
+        "Every evidence signal must belong to the current approved boundary"
+    )

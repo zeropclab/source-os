@@ -87,6 +87,34 @@ async def test_need_hypothesis_rejects_uncited_or_non_supporting_assessments(cli
     assert "support" in rejected.json()["detail"].lower()
 
 
+async def test_assessment_rejects_upstream_citation_outside_its_objective(client, db):
+    first = await _objective(client, db)
+    second = await _objective(client, db)
+    signal = await _accepted_signal(client)
+    upstream = await client.post(
+        f"/api/discovery-objectives/{first['id']}/assessments",
+        json={
+            "kind": "support",
+            "statement": "An observed workaround exists.",
+            "evidence_ids": [signal["id"]],
+        },
+    )
+    response = await client.post(
+        f"/api/discovery-objectives/{second['id']}/assessments",
+        json={
+            "kind": "support",
+            "statement": "This must not cite another Objective's assessment.",
+            "assessment_ids": [upstream.json()["id"]],
+        },
+    )
+
+    assert response.status_code == 422
+    assert (
+        response.json()["detail"]
+        == "Assessment cites an upstream Assessment outside this Objective"
+    )
+
+
 async def test_operator_can_explicitly_promote_supported_hypothesis_without_auto_creation(
     client, db
 ):

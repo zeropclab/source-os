@@ -113,6 +113,7 @@ async def _persist_signal_drafts(
                 {
                     "id": uuid.uuid4(),
                     "mission_run_id": run.id,
+                    "source_id": uuid.UUID(run.input_snapshot["source"]["id"]),
                     "lineage_key": draft.lineage_key,
                     "raw_artifact_key": draft.raw_artifact_key,
                     "source_label": draft.source_label,

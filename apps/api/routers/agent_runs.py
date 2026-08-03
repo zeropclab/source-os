@@ -296,9 +296,26 @@ async def create_objective_agent_run(
     )
     if len(signals) != len(body.evidence_signal_ids):
         raise HTTPException(status_code=422, detail="Every evidence signal must exist")
+    approved_source_ids = set(boundary.approved_source_ids)
+    if any(
+        signal.source_id is None or str(signal.source_id) not in approved_source_ids
+        for signal in signals
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="Every evidence signal must belong to the current approved boundary",
+        )
+    if plan is not None and any(
+        str(signal.source_id) not in set(plan.selected_source_ids) for signal in signals
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="Every evidence signal must belong to the Agent Run's Acquisition Plan",
+        )
     bundle = [
         {
             "signal_id": str(signal.id),
+            "source_id": str(signal.source_id),
             "source_label": signal.source_label,
             "source_uri": signal.source_uri,
             "original_material": signal.original_material,

@@ -46,6 +46,8 @@
         <header><strong>受控 Discovery Agent 运行</strong></header>
         <p>每次运行绑定当时的目标、边界、证据包和预算；边界变化后不得继续执行。</p>
         <ul id="agent-runs"></ul>
+        <p>Agent 草案（仍需人工审阅，不会自动成为结论或计划）</p>
+        <ul id="agent-proposals"></ul>
     </article>
 
     <article id="mission-console-region">
@@ -155,6 +157,16 @@
         renderList(
             '#agent-runs',
             workspace.agent_runs.map((run) => `${run.status}: ${run.prompt_version} · boundary v${run.boundary_version}`),
+        );
+        renderList(
+            '#agent-proposals',
+            workspace.agent_runs.map((run) => {
+                const proposal = run.output?.proposal;
+                if (!proposal) return `${run.status}: 尚无可审阅草案。`;
+                const summary = proposal.statement || proposal.reason || '未提供摘要';
+                const citations = proposal.evidence_ids?.join(', ') || '无证据引用';
+                return `${proposal.contract}: ${summary} · 引用：${citations} · 状态：${proposal.status || 'unknown'}`;
+            }),
         );
         renderList(
             '#workspace-evidence',
