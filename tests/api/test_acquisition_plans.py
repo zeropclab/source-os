@@ -145,6 +145,10 @@ async def test_linked_mission_must_keep_using_a_plan_allowed_by_current_boundary
             cost_budget_cents=0,
         ),
     )
+    stale_run = await client.post(
+        f"/api/acquisition-missions/{linked.json()['id']}/queued-runs",
+        json={"execution_mode": "fixture"},
+    )
 
     assert linked.status_code == 201
     assert queued.status_code == 201
@@ -154,3 +158,7 @@ async def test_linked_mission_must_keep_using_a_plan_allowed_by_current_boundary
         == queued.json()["id"]
     )
     assert stale.status_code == 409
+    assert stale_run.status_code == 409
+    assert (
+        stale_run.json()["detail"] == "Plan is no longer permitted by the current approved boundary"
+    )
