@@ -36,6 +36,9 @@ async function loadTodayWorkspace() {
             <p><strong>Next reality action:</strong> ${today.next_reality_action}</p>
             <p><strong>Strongest objection:</strong> ${today.strongest_objection}</p>
             <p><strong>Active Need:</strong> ${activeNeed}</p>
+            <p><strong>Active validation:</strong> ${today.active_validation
+                ? `${today.active_validation.status} · ${today.active_validation.stop_condition}`
+                : 'None'}</p>
             <p><strong>WIP:</strong> validations ${today.wip.validations.active}/${today.wip.validations.limit}; builds ${today.wip.builds_or_paid_pilots.active}/${today.wip.builds_or_paid_pilots.limit}</p>
             <small>Recorded outcomes: ${today.recorded_outcomes}. Counts do not establish success.</small>`;
     } catch (error) {
