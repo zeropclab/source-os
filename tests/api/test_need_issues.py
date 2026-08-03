@@ -1002,3 +1002,73 @@ async def test_validation_wip_limit_requires_a_recorded_override_reason(client):
         },
     )
     assert overridden.status_code == 201
+
+
+async def test_operator_can_plan_and_mark_an_approved_external_validation_contact(client):
+    created = await client.post(
+        "/api/need-issues",
+        json={
+            "title": "Production operators need independent incident recovery",
+            "target_actor": "operators of production automation workflows",
+            "context": "after an automation workflow fails in production",
+            "problem": "the operator cannot quickly diagnose and recover the workflow",
+            "desired_outcome": "restore the workflow with a traceable diagnosis",
+            "unknowns": ["Whether independent operators will pay for help"],
+            "next_validation_action": "contact three independent operators about recent incidents",
+        },
+    )
+    experiment = await client.post(
+        f"/api/need-issues/{created.json()['id']}/experiments",
+        json={
+            "hypothesis": "Independent operators will describe a recent costly recovery incident.",
+            "audience": "Independent production automation operators.",
+            "method": "Three individual, operator-approved interview requests.",
+            "budget_cents": 0,
+            "time_limit_hours": 72,
+            "success_threshold": (
+                "Three independent recent cases with consequences and alternatives."
+            ),
+            "negative_threshold": "No recent cases after three contact attempts.",
+            "stop_condition": "Stop after three attempts or 72 hours.",
+            "requires_external_action": True,
+        },
+    )
+    experiment_id = experiment.json()["id"]
+
+    planned = await client.post(
+        f"/api/experiments/{experiment_id}/execution-tasks",
+        json={
+            "target_label": "Independent operator A",
+            "channel": "public GitHub discussion",
+            "contact_reference": "https://github.com/example/example/discussions/1",
+            "outreach_script": "May I ask about the most recent production workflow recovery?",
+            "due_at": "2026-08-06T12:00:00Z",
+        },
+    )
+    assert planned.status_code == 201
+    task_id = planned.json()["id"]
+    assert planned.json()["status"] == "planned"
+
+    blocked = await client.post(
+        f"/api/experiments/{experiment_id}/execution-tasks/{task_id}/mark-contacted"
+    )
+    assert blocked.status_code == 409
+    assert "operator approval" in blocked.json()["detail"]
+
+    approved = await client.post(
+        f"/api/experiments/{experiment_id}/approve",
+        json={"operator_note": "I authorize these three bounded interview requests."},
+    )
+    assert approved.status_code == 200
+    started = await client.post(f"/api/experiments/{experiment_id}/start")
+    assert started.status_code == 200
+    contacted = await client.post(
+        f"/api/experiments/{experiment_id}/execution-tasks/{task_id}/mark-contacted"
+    )
+    assert contacted.status_code == 200
+    assert contacted.json()["status"] == "contacted"
+    assert contacted.json()["contacted_at"] is not None
+
+    detail = await client.get(f"/api/experiments/{experiment_id}")
+    assert detail.status_code == 200
+    assert detail.json()["execution_tasks"][0]["id"] == task_id

@@ -1,4 +1,58 @@
-{% extends "base.html" %}{% block title %}Run Validation Experiment{% endblock %}{% block content %}
-<header class="workbench-heading"><div><p class="eyebrow">Reality test</p><h1>Validation Experiment</h1><p>Zero observations prove nothing. Approval is explicit; decisions require recorded market observations.</p></div></header><div id="experiment-message" role="status"></div><article id="experiment-detail">Loading experiment…</article>
-<section class="workbench-grid"><article><header><strong>1. Approve then start</strong></header><form id="approve-form"><label>Approval note<textarea id="approval-note" required></textarea></label><button>Approve</button></form><button id="start-experiment" class="secondary">Start approved experiment</button></article><article><header><strong>2. Record observation</strong></header><form id="observation-form"><label>Kind<select id="observation-kind"><option value="response">Response</option><option value="refusal">Refusal</option><option value="silence">Silence</option><option value="trial">Trial</option><option value="payment">Payment</option><option value="refund">Refund</option><option value="cost">Cost</option></select></label><label>Observed fact<textarea id="observation-text" required></textarea></label><label>Source URI<input id="observation-uri"></label><label>Amount cents<input id="observation-amount" type="number"></label><button>Record observation</button></form></article></section><article><header><strong>3. Make a decision</strong></header><form id="decision-form"><label>Decision<select id="decision"><option value="continue">Continue</option><option value="change">Change</option><option value="stop">Stop</option></select></label><label>Rationale<textarea id="decision-rationale" required></textarea></label><button class="contrast">Record decision</button></form></article>
-<script>const experimentId='{{ experiment_id }}';const $=id=>document.getElementById(id);async function request(url,o={}){const r=await fetch(url,o),d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(typeof d.detail==='string'?d.detail:JSON.stringify(d));return d}function message(t,k='success'){$('experiment-message').innerHTML=`<article class="message-${k}">${t}</article>`}async function load(){try{const e=await request(`/api/experiments/${experimentId}`);$('experiment-detail').innerHTML=`<header><strong>${e.status}</strong></header><p>Hypothesis: ${e.hypothesis}</p><p>Success: ${e.success_threshold}</p><p>Negative: ${e.negative_threshold}</p><p>Stop: ${e.stop_condition}</p>`}catch(e){message(e.message,'error')}}$('approve-form').onsubmit=async e=>{e.preventDefault();try{await request(`/api/experiments/${experimentId}/approve`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({operator_note:$('approval-note').value})});message('Approved; starting remains explicit.');load()}catch(e){message(e.message,'error')}};$('start-experiment').onclick=async()=>{try{await request(`/api/experiments/${experimentId}/start`,{method:'POST'});message('Running. Record reality, including refusal or silence.');load()}catch(e){message(e.message,'error')}};$('observation-form').onsubmit=async e=>{e.preventDefault();try{await request(`/api/experiments/${experimentId}/observations`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:$('observation-kind').value,observation:$('observation-text').value,source_uri:$('observation-uri').value||null,amount_cents:$('observation-amount').value?Number($('observation-amount').value):null})});message('Observation recorded.');}catch(e){message(e.message,'error')}};$('decision-form').onsubmit=async e=>{e.preventDefault();try{await request(`/api/experiments/${experimentId}/decision`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({decision:$('decision').value,rationale:$('decision-rationale').value})});message('Decision recorded.');load()}catch(e){message(e.message,'error')}};load()</script>{% endblock %}
+{% extends "base.html" %}
+{% block title %}Run Validation Experiment{% endblock %}
+{% block content %}
+<header class="workbench-heading">
+    <div>
+        <p class="eyebrow">Reality test</p>
+        <h1>Validation Experiment</h1>
+        <p>Approval enables work; a task records whom you intend to contact. Only your actual contact and the resulting observation count as reality.</p>
+    </div>
+</header>
+<div id="experiment-message" role="status"></div>
+<article id="experiment-detail">Loading experiment…</article>
+<section class="workbench-grid">
+    <article>
+        <header><strong>1. Approve then start</strong></header>
+        <form id="approve-form"><label>Approval note<textarea id="approval-note" required></textarea></label><button>Approve</button></form>
+        <button id="start-experiment" class="secondary">Start approved experiment</button>
+    </article>
+    <article>
+        <header><strong>2. Plan the next real contact</strong></header>
+        <form id="execution-task-form">
+            <label>Target label<input id="task-target-label" required placeholder="Independent operator A"></label>
+            <label>Channel<input id="task-channel" required placeholder="Public discussion / email / interview"></label>
+            <label>Contact reference<input id="task-contact-reference" required placeholder="URL, note URI, or contact record"></label>
+            <label>Outreach script<textarea id="task-outreach-script" required placeholder="Bounded question; no offer or promise unless explicitly intended."></textarea></label>
+            <label>Due at<input id="task-due-at" type="datetime-local" required></label>
+            <button>Plan contact task</button>
+        </form>
+    </article>
+    <article>
+        <header><strong>3. Record observation</strong></header>
+        <form id="observation-form"><label>Kind<select id="observation-kind"><option value="response">Response</option><option value="refusal">Refusal</option><option value="silence">Silence</option><option value="trial">Trial</option><option value="payment">Payment</option><option value="refund">Refund</option><option value="cost">Cost</option></select></label><label>Observed fact<textarea id="observation-text" required></textarea></label><label>Source URI<input id="observation-uri"></label><label>Amount cents<input id="observation-amount" type="number"></label><button>Record observation</button></form>
+    </article>
+</section>
+<article>
+    <header><strong>Contact task ledger</strong></header>
+    <div id="execution-task-list"><p>Loading planned contacts…</p></div>
+</article>
+<article>
+    <header><strong>4. Make a decision</strong></header>
+    <form id="decision-form"><label>Decision<select id="decision"><option value="continue">Continue</option><option value="change">Change</option><option value="stop">Stop</option></select></label><label>Rationale<textarea id="decision-rationale" required></textarea></label><button class="contrast">Record decision</button></form>
+</article>
+<script>
+const experimentId='{{ experiment_id }}';
+const $=id=>document.getElementById(id);
+const escapeHtml=value=>String(value??'').replace(/[&<>'"]/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
+async function request(url,options={}){const response=await fetch(url,options),data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(typeof data.detail==='string'?data.detail:JSON.stringify(data));return data}
+function message(text,kind='success'){$('experiment-message').innerHTML=`<article class="message-${kind}">${escapeHtml(text)}</article>`}
+function taskList(tasks){const target=$('execution-task-list');if(!tasks.length){target.innerHTML='<p><em>No contact task planned. This is not evidence of demand.</em></p>';return}target.innerHTML=`<div class="evidence-list">${tasks.map(task=>`<article><header><strong>${escapeHtml(task.status)}</strong></header><p><strong>${escapeHtml(task.target_label)}</strong> · ${escapeHtml(task.channel)}</p><p><small>Due: ${escapeHtml(task.due_at)} · reference: ${escapeHtml(task.contact_reference)}</small></p><p>${escapeHtml(task.outreach_script)}</p>${task.status==='planned'?`<button data-task-id="${task.id}" class="mark-contacted">Mark contacted</button>`:`<p><small>Contacted: ${escapeHtml(task.contacted_at)}</small></p>`}</article>`).join('')}</div>`;document.querySelectorAll('.mark-contacted').forEach(button=>button.onclick=async()=>{try{await request(`/api/experiments/${experimentId}/execution-tasks/${button.dataset.taskId}/mark-contacted`,{method:'POST'});message('Contact recorded. Now record the actual response, refusal, or silence when observed.');load()}catch(error){message(error.message,'error')}})}
+async function load(){try{const experiment=await request(`/api/experiments/${experimentId}`);$('experiment-detail').innerHTML=`<header><strong>${escapeHtml(experiment.status)}</strong></header><p>Hypothesis: ${escapeHtml(experiment.hypothesis)}</p><p>Success: ${escapeHtml(experiment.success_threshold)}</p><p>Negative: ${escapeHtml(experiment.negative_threshold)}</p><p>Stop: ${escapeHtml(experiment.stop_condition)}</p>`;taskList(experiment.execution_tasks)}catch(error){message(error.message,'error')}}
+$('approve-form').onsubmit=async event=>{event.preventDefault();try{await request(`/api/experiments/${experimentId}/approve`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({operator_note:$('approval-note').value})});message('Approved; starting remains explicit.');load()}catch(error){message(error.message,'error')}};
+$('start-experiment').onclick=async()=>{try{await request(`/api/experiments/${experimentId}/start`,{method:'POST'});message('Running. Record reality, including refusal or silence.');load()}catch(error){message(error.message,'error')}};
+$('execution-task-form').onsubmit=async event=>{event.preventDefault();try{await request(`/api/experiments/${experimentId}/execution-tasks`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target_label:$('task-target-label').value,channel:$('task-channel').value,contact_reference:$('task-contact-reference').value,outreach_script:$('task-outreach-script').value,due_at:new Date($('task-due-at').value).toISOString()})});message('Contact task planned. It is still not an external action.');event.target.reset();load()}catch(error){message(error.message,'error')}};
+$('observation-form').onsubmit=async event=>{event.preventDefault();try{await request(`/api/experiments/${experimentId}/observations`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:$('observation-kind').value,observation:$('observation-text').value,source_uri:$('observation-uri').value||null,amount_cents:$('observation-amount').value?Number($('observation-amount').value):null})});message('Observation recorded.');}catch(error){message(error.message,'error')}};
+$('decision-form').onsubmit=async event=>{event.preventDefault();try{await request(`/api/experiments/${experimentId}/decision`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({decision:$('decision').value,rationale:$('decision-rationale').value})});message('Decision recorded.');load()}catch(error){message(error.message,'error')}};
+load();
+</script>
+{% endblock %}

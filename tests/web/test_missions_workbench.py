@@ -131,6 +131,13 @@ async def test_need_validation_workbench_exposes_counterevidence_challenge_and_e
     assert "/experiments" in page
     assert "No action here marks this Need Issue as discovery-validated" in page
 
+    experiment_page = await client.get("/needs/experiments/11111111-1111-1111-1111-111111111111")
+    assert experiment_page.status_code == 200
+    assert 'id="execution-task-form"' in experiment_page.text
+    assert 'id="execution-task-list"' in experiment_page.text
+    assert "/execution-tasks" in experiment_page.text
+    assert "mark-contacted" in experiment_page.text
+
     library = await client.get("/experiments")
     assert library.status_code == 200
     library_page = library.text

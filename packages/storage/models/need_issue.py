@@ -149,6 +149,30 @@ class ValidationExperiment(Base):
     observations = relationship(
         "MarketObservation", back_populates="experiment", cascade="all, delete-orphan"
     )
+    execution_tasks = relationship(
+        "ValidationExecutionTask", back_populates="experiment", cascade="all, delete-orphan"
+    )
+
+
+class ValidationExecutionTask(Base):
+    __tablename__ = "validation_execution_tasks"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    experiment_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("validation_experiments.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    target_label: Mapped[str] = mapped_column(Text, nullable=False)
+    channel: Mapped[str] = mapped_column(Text, nullable=False)
+    contact_reference: Mapped[str] = mapped_column(Text, nullable=False)
+    outreach_script: Mapped[str] = mapped_column(Text, nullable=False)
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="planned")
+    contacted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    experiment = relationship("ValidationExperiment", back_populates="execution_tasks")
 
 
 class MarketObservation(Base):

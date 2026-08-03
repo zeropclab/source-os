@@ -230,6 +230,24 @@ class ValidationExperimentCreate(BaseModel):
     wip_override_reason: str | None = Field(default=None, min_length=1)
 
 
+class ValidationExecutionTaskCreate(BaseModel):
+    target_label: str = Field(min_length=1)
+    channel: str = Field(min_length=1)
+    contact_reference: str = Field(min_length=1)
+    outreach_script: str = Field(min_length=1)
+    due_at: datetime
+
+
+class ValidationExecutionTaskResponse(ValidationExecutionTaskCreate):
+    id: uuid.UUID
+    experiment_id: uuid.UUID
+    status: str
+    contacted_at: datetime | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class ValidationExperimentResponse(ValidationExperimentCreate):
     id: uuid.UUID
     need_issue_id: uuid.UUID
@@ -239,6 +257,7 @@ class ValidationExperimentResponse(ValidationExperimentCreate):
     decision_rationale: str | None
     created_at: datetime
     updated_at: datetime
+    execution_tasks: list[ValidationExecutionTaskResponse] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 
