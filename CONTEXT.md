@@ -16,6 +16,10 @@ _Avoid_: confirmation, consent, automatic escalation
 The versioned set of public sources, tools, request, time, and cost limits within which a Discovery Agent may act without a new Operator Approval.
 _Avoid_: agent permission, unrestricted access
 
+**Operator Boundary Revision**:
+An explicit operator-approved, versioned change to an Approved Collection Boundary that names the newly granted source, budget, time, tool, or evidence condition. It is the only way to reactivate a blocked Discovery Objective.
+_Avoid_: reopen, retry, reset
+
 **Discovery Objective**:
 The operator-owned, falsifiable question that gives a Discovery Agent a continuing reason to learn until its stop condition, pause, or budget limit is reached.
 _Avoid_: project, research task, agent prompt
