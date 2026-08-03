@@ -193,6 +193,31 @@ async def test_worker_lease_covers_the_pinned_mission_time_budget(client, db):
     assert claimed.lease_expires_at >= start + timedelta(minutes=16)
 
 
+async def test_worker_honors_a_cancel_request_without_persisting_candidate_evidence(client, db):
+    mission, _ = await _create_github_mission(client)
+    queued = await client.post(
+        f"/api/acquisition-missions/{mission['id']}/queued-runs",
+        json={"execution_mode": "fixture"},
+    )
+    await client.post(f"/api/acquisition-mission-runs/{queued.json()['id']}/execute")
+    claimed = await claim_next_mission_run(db, worker_id="worker-cancel", lease_seconds=60)
+    assert claimed is not None
+    claimed.lifecycle_status = "cancel_requested"
+    await db.commit()
+
+    cancelled = await execute_claimed_mission_run(
+        db,
+        run_id=claimed.id,
+        worker_id="worker-cancel",
+        fixture_transport=GitHubFixtureTransport(scenario="issue_with_context"),
+        live_transport=GitHubFixtureTransport(scenario="issue_with_context"),
+    )
+
+    assert cancelled.lifecycle_status == "cancelled"
+    assert cancelled.terminal_state == "cancelled"
+    assert cancelled.external_signal_ids == []
+
+
 async def test_failed_mission_run_can_be_retried_as_a_new_traceable_queued_run(client):
     mission, _ = await _create_github_mission(client, retry_limit=0)
     app.dependency_overrides[get_github_mission_transport] = lambda: GitHubFixtureTransport(
