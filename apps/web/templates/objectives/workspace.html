@@ -28,8 +28,14 @@
         <header><strong>操作员审批与边界修订</strong></header>
         <p>待批准请求</p>
         <ul id="pending-approvals"></ul>
+        <div id="approval-actions" hidden></div>
         <p>边界修订</p>
         <ul id="boundary-revisions"></ul>
+        <form id="boundary-revision-form" hidden>
+            <label>修订理由<input name="reason" required></label>
+            <label>新增请求上限<input name="request_limit" type="number" min="1" required></label>
+            <button>以新边界恢复目标</button>
+        </form>
     </article>
 
     <article>
@@ -80,7 +86,33 @@
             '#acquisition-plans',
             workspace.plans.map((plan) => `v${plan.version}: ${plan.question}`),
         );
+        const actions = document.querySelector('#approval-actions');
+        actions.hidden = objective.status !== 'pending_approval';
+        actions.replaceChildren(...workspace.pending_approvals.flatMap((approval) => {
+            const approve = document.createElement('button'); approve.textContent = `批准 ${approval.request_type}`;
+            approve.onclick = () => approveApproval(approval.id, 'approve');
+            const reject = document.createElement('button'); reject.textContent = `拒绝 ${approval.request_type}`;
+            reject.onclick = () => approveApproval(approval.id, 'reject');
+            return [approve, reject];
+        }));
+        document.querySelector('#boundary-revision-form').hidden = objective.status !== 'blocked';
     }
+    async function approveApproval(approvalId, decision) {
+        const reason = window.prompt('记录理由'); if (!reason) return;
+        await fetch(`/api/discovery-objectives/${objectiveId}/approvals/${approvalId}/${decision}`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({operator: 'owner', reason}),
+        });
+        await loadObjectiveWorkspace();
+    }
+    document.querySelector('#boundary-revision-form').onsubmit = async (event) => {
+        event.preventDefault(); const data = new FormData(event.currentTarget);
+        await fetch(`/api/discovery-objectives/${objectiveId}/boundary-revisions`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({operator: 'owner', reason: data.get('reason'), boundary_patch: {request_limit: Number(data.get('request_limit'))}}),
+        });
+        await loadObjectiveWorkspace();
+    };
     loadObjectiveWorkspace().catch((error) => {
         const target = document.querySelector('#objective-error'); target.hidden = false; target.textContent = error.message;
     });

@@ -13,3 +13,6 @@ async def test_objective_workspace_page_loads_the_durable_workspace_contract(cli
     assert "pending_approvals" in page
     assert "boundary_revisions" in page
     assert "workspace.plans" in page
+    assert 'id="approval-actions"' in page
+    assert 'id="boundary-revision-form"' in page
+    assert "approveApproval" in page
