@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 
 class ExternalSignalCreate(BaseModel):
+    source_id: uuid.UUID | None = None
     source_label: str = Field(min_length=1)
     source_uri: str | None = None
     original_material: str = Field(min_length=1)
@@ -33,6 +34,7 @@ class SignalTriageEventResponse(BaseModel):
 class ExternalSignalResponse(BaseModel):
     id: uuid.UUID
     mission_run_id: uuid.UUID | None
+    source_id: uuid.UUID | None
     mission_run_ids: list[uuid.UUID] = Field(default_factory=list)
     lineage_key: str | None
     raw_artifact_key: str | None

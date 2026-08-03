@@ -1,0 +1,35 @@
+"""Public page contract for the Discovery Objective workspace."""
+
+
+async def test_objective_workspace_page_loads_the_durable_workspace_contract(client):
+    response = await client.get("/objectives/11111111-1111-1111-1111-111111111111")
+
+    assert response.status_code == 200
+    page = response.text
+    assert 'id="objective-workspace"' in page
+    assert 'id="objective-status"' in page
+    assert "/api/discovery-objectives/${objectiveId}/workspace" in page
+    assert "Approved collection boundary" in page
+    assert "pending_approvals" in page
+    assert "boundary_revisions" in page
+    assert "workspace.plans" in page
+    assert 'id="approval-actions"' in page
+    assert 'id="boundary-revision-form"' in page
+    assert "approveApproval" in page
+    assert 'id="decision-record-panel"' in page
+    assert 'id="mission-console-link" href="/missions"' in page
+    assert 'id="mission-console-region"' in page
+    assert 'src="/missions"' in page
+    assert 'id="strongest-counterevidence"' in page
+    assert 'id="assessment-unknowns"' in page
+    assert "plan.revision" in page
+    assert "assessment.evidence_ids" in page
+    assert "workspace.decision_record" in page
+    assert "校准下一次判断" in page
+    assert 'id="assessments-panel"' in page
+    assert 'id="agent-runs-panel"' in page
+    assert 'id="agent-proposals"' in page
+    assert "run.output?.proposal" in page
+    assert 'id="evidence-panel"' in page
+    assert 'id="approval-panel"' in page
+    assert 'id="decision-record-panel"' in page

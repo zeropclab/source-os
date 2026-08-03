@@ -1,9 +1,18 @@
 from .acquisition_mission import AcquisitionMission
 from .acquisition_mission_run import AcquisitionMissionRun
 from .acquisition_mission_run_signal import AcquisitionMissionRunSignal
+from .acquisition_plan import AcquisitionPlan, PlanRevision
 from .agent_run import AgentRun
 from .comment import Comment
 from .content_version import ContentVersion
+from .discovery_assessment import DiscoveryAssessment, NeedHypothesis
+from .discovery_decision import DiscoveryDecisionRecord, OutcomeFeedback
+from .discovery_objective import (
+    ApprovedCollectionBoundary,
+    DiscoveryObjective,
+    OperatorApproval,
+    OperatorBoundaryRevision,
+)
 from .external_signal import ExternalSignal, SignalTriageEvent
 from .fetch_job import FetchJob
 from .media_asset import MediaAsset
@@ -39,11 +48,21 @@ __all__ = [
     "SourceConfigProposal",
     "SourceProbeRun",
     "AcquisitionMission",
+    "AcquisitionPlan",
+    "PlanRevision",
     "AcquisitionMissionRun",
     "AcquisitionMissionRunSignal",
     "AgentRun",
     "SourceItem",
     "ContentVersion",
+    "DiscoveryObjective",
+    "ApprovedCollectionBoundary",
+    "OperatorApproval",
+    "OperatorBoundaryRevision",
+    "DiscoveryAssessment",
+    "NeedHypothesis",
+    "DiscoveryDecisionRecord",
+    "OutcomeFeedback",
     "ExternalSignal",
     "FetchJob",
     "Comment",

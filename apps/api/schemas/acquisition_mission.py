@@ -27,11 +27,13 @@ class AcquisitionMissionFields(BaseModel):
 
 class AcquisitionMissionCreate(AcquisitionMissionFields):
     source_config_version_id: uuid.UUID
+    acquisition_plan_id: uuid.UUID | None = None
 
 
 class AcquisitionMissionResponse(AcquisitionMissionFields):
     id: uuid.UUID
     source_config_version_id: uuid.UUID | None
+    acquisition_plan_id: uuid.UUID | None
     source_config_version: SourceConfigVersionResponse | None
     status: str
     created_at: datetime

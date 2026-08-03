@@ -15,6 +15,7 @@ from .routers import (
     acquisition_missions,
     agent_runs,
     delivery_records,
+    discovery_objectives,
     experiments,
     export,
     external_signals,
@@ -90,6 +91,11 @@ app.include_router(jobs.router, prefix="/api/jobs", tags=["Jobs"])
 app.include_router(export.router, prefix="/api/export", tags=["Export"])
 app.include_router(need_issues.router, prefix="/api/need-issues", tags=["Need Issues"])
 app.include_router(agent_runs.router, prefix="/api/agent-runs", tags=["Agent Runs"])
+app.include_router(
+    agent_runs.objective_router,
+    prefix="/api/discovery-objectives",
+    tags=["Discovery Agent Runs"],
+)
 app.include_router(experiments.router, prefix="/api/experiments", tags=["Validation Experiments"])
 app.include_router(product_theses.router, prefix="/api/product-theses", tags=["Product Theses"])
 app.include_router(features.router, prefix="/api/features", tags=["Feature Definitions"])
@@ -100,6 +106,11 @@ app.include_router(
     feature_outcomes.router, prefix="/api/feature-outcomes", tags=["Feature Outcomes"]
 )
 app.include_router(today.router, prefix="/api/today", tags=["Today"])
+app.include_router(
+    discovery_objectives.router,
+    prefix="/api/discovery-objectives",
+    tags=["Discovery Objectives"],
+)
 app.include_router(
     ontology_hypotheses.router, prefix="/api/ontology-hypotheses", tags=["Ontology Hypotheses"]
 )

@@ -5,39 +5,36 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}SourceOS{% endblock %} — 现实需求发现工作台</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css?v=control-room-canonical-v2">
 </head>
 <body>
-    <header class="container">
-        <nav>
-            <ul>
-                <li><strong><a href="/" style="text-decoration:none">SourceOS</a></strong></li>
-            </ul>
-            <ul>
-                <li><a href="/">Dashboard</a></li>
-                <li><a href="/sources">Sources</a></li>
-                <li><a href="/portfolio">Portfolio</a></li>
-                <li><a href="/missions">Missions</a></li>
-                <li><a href="/observations">Observe</a></li>
-                <li><a href="/agents">Agents</a></li>
-                <li><a href="/ontology">Ontology</a></li>
-                <li><a href="/needs">Needs</a></li>
-                <li><a href="/experiments">Experiments</a></li>
-                <li><a href="/product-theses">Theses</a></li>
-                <li><a href="/features">Features</a></li>
-                <li><a href="/items">Items</a></li>
-                <li><a href="/jobs">Jobs</a></li>
-                <li><a href="/api/docs" target="_blank">API</a></li>
-            </ul>
-        </nav>
-    </header>
-
-    <main class="container">
-        {% block content %}{% endblock %}
-    </main>
-
-    <footer class="container">
-        <small>SourceOS v0.1.0 — 证据驱动的现实需求发现与产品验证工作台</small>
-    </footer>
+    <div class="app-shell">
+        <aside class="app-sidebar">
+            <a class="brand-lockup" href="/"><span class="brand-mark">SO</span><strong>SourceOS</strong><small>私人经营系统</small></a>
+            <nav class="primary-nav" aria-label="主要导航">
+                <a href="/"><span>□</span>今天</a>
+                <a class="active" href="/missions"><span>□</span>现实采集 <b>3</b></a>
+                <a href="/needs"><span>□</span>需求挑战 <b>7</b></a>
+                <a href="/experiments"><span>□</span>市场验证</a>
+                <a href="/product-theses"><span>□</span>产品下注</a>
+                <a href="/features"><span>□</span>交付结果</a>
+            </nav>
+            <p class="nav-label">知识与校准</p>
+            <nav class="secondary-nav" aria-label="辅助导航">
+                <a href="/sources"><span>□</span>采集源</a>
+                <a href="/portfolio"><span>□</span>信源组合</a>
+                <a href="/ontology"><span>□</span>本体关联</a>
+                <a href="/agents"><span>□</span>智能体</a>
+            </nav>
+            <div class="weekly-budget"><strong>本周现实接触预算</strong><div class="budget-track"><i></i></div><small>已使用 2.9 / 7 小时</small></div>
+        </aside>
+        <section class="app-frame">
+            <header class="topbar">
+                <p>{% block breadcrumb %}现实采集 / <strong>采集控制台</strong>{% endblock %}</p>
+                <div class="topbar-actions"><label class="command-search"><span>⌘ K</span><input aria-label="搜索" placeholder="搜索来源、任务、证据…"></label><small>本周剩余 4h 20m</small><b class="operator-avatar">我</b></div>
+            </header>
+            <main class="app-content">{% block content %}{% endblock %}</main>
+        </section>
+    </div>
 </body>
 </html>

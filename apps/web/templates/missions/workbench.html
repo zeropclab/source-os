@@ -2,86 +2,97 @@
 {% block title %}Mission Workbench{% endblock %}
 
 {% block content %}
-<header class="workbench-heading">
+<header class="workbench-heading collection-heading">
     <div>
-        <p class="eyebrow">Evidence acquisition</p>
-        <h1>Mission Workbench</h1>
-        <p>把一个现实问题约束成可复核的采集任务。这里产出的是证据候选，不是已经成立的需求。</p>
+        <p class="eyebrow">现实采集 / 采集控制台</p>
+        <h1>现实采集工作台</h1>
+        <p>管理“为什么采、从哪里采、采到什么程度”，而不是启动一个黑箱爬虫。</p>
     </div>
-    <a href="/sources/create" role="button" class="secondary">Create source</a>
+    <div class="head-actions"><a href="/sources/create" role="button" class="secondary">导入材料</a><button type="button" onclick="document.getElementById('mission-editor').scrollIntoView({behavior: 'smooth', block: 'start'}); document.getElementById('reality-question').focus();">＋ 新建采集任务</button></div>
 </header>
 
 <div id="workbench-message" role="status" aria-live="polite"></div>
 
-<section class="workbench-grid">
-    <article>
-        <header><strong>1. Select an active source</strong></header>
-        <label for="source-id">Source</label>
-        <select id="source-id" required>
-            <option value="">Loading active sources…</option>
-        </select>
-        <small id="source-summary">Only an explicitly selected source can be configured or run.</small>
-    </article>
+<nav class="collection-tabs" aria-label="采集工作台分区">
+    <button type="button" class="active">控制台</button><a href="/sources">采集源 <small>12</small></a><button type="button">采集任务 <small>5</small></button><button type="button">运行队列 <small>3</small></button><a href="#evidence-inbox">信号收件箱 <small>48</small></a><button type="button">上下文修复 <small>6</small></button><button type="button">质量审计</button>
+</nav>
 
+<article class="cold-water-notice"><strong>冷水提醒</strong><span>采集量不是证据强度。重复的同源评论不会自动变成独立需求。</span><a href="/portfolio">检查信源组合 →</a></article>
+
+<div id="collection-layout">
+<aside id="source-panel" class="collection-panel">
     <article>
-        <header><strong>2. Pin a collection configuration</strong></header>
-        <p><small>A mission always records an immutable configuration version. Adjusting this form creates a new version; it never rewrites an old run.</small></p>
+        <header><strong>采集源</strong><small>活跃来源</small></header>
+        <label for="source-id">选择来源</label>
+        <select id="source-id" required>
+            <option value="">正在加载可用信源…</option>
+        </select>
+        <small id="source-summary">选择一个来源，再定义它本次的采集边界。</small>
+        <a href="/sources" role="button" class="secondary outline source-library-link">管理全部采集源</a>
+    </article>
+</aside>
+
+<section id="mission-editor" class="collection-panel">
+    <article>
+        <header><strong>任务定义</strong><small>草稿 · 自动保存</small></header>
+        <h2>固定采集配置</h2>
+        <p><small>每次采集都固定一版配置。修改会创建新版本，不会改写既有运行记录。</small></p>
         <form id="source-config-form">
             <div class="grid">
-                <label>Access mode
+                <label>访问方式
                     <select id="access-mode"><option value="public">Public</option><option value="rate_limited">Rate limited</option><option value="credentialed">Credentialed</option><option value="subscription">Subscription</option></select>
                 </label>
-                <label>Parser
+                <label>解析器
                     <input id="parser" value="github_issue" required>
                 </label>
             </div>
-            <label>Query terms <small>(one per line)</small>
+            <label>检索词 <small>（每行一个）</small>
                 <textarea id="config-query-terms" rows="3" required>user pain
 workaround</textarea>
             </label>
             <div class="grid">
-                <label>Request limit<input id="request-limit" type="number" min="1" value="2" required></label>
-                <label>Timeout (seconds)<input id="timeout-seconds" type="number" min="1" value="15" required></label>
-                <label>Page limit<input id="page-limit" type="number" min="1" value="1" required></label>
+                <label>请求上限<input id="request-limit" type="number" min="1" value="2" required></label>
+                <label>超时（秒）<input id="timeout-seconds" type="number" min="1" value="15" required></label>
+                <label>页数上限<input id="page-limit" type="number" min="1" value="1" required></label>
             </div>
-            <button type="submit" class="secondary">Create and pin config version</button>
+            <button type="submit">保存采集配置</button>
         </form>
         <p id="pinned-config" class="config-status">No configuration version pinned.</p>
     </article>
-</section>
+    </article>
 
-<article>
-    <header><strong>3. Define a bounded reality question</strong></header>
+    <article>
+    <header><strong>本次采集要回答的问题</strong></header>
     <form id="mission-form">
         <div class="grid">
-            <label>Mission type
+            <label>任务类型
                 <select id="mission-type"><option value="targeted_evidence">Targeted evidence</option><option value="exploratory">Exploratory</option><option value="counterevidence">Counterevidence</option><option value="context_repair">Context repair</option></select>
             </label>
-            <label>Target audience<input id="target-audience" value="independent developers" required></label>
+            <label>目标人群<input id="target-audience" value="独立开发者" required></label>
         </div>
-        <label>Reality question
-            <textarea id="reality-question" rows="2" required>What observable cost or repeated workaround is this audience describing?</textarea>
+        <label>现实问题 / 证据缺口
+            <textarea id="reality-question" rows="2" required>这个人群正在描述什么可观察的成本或重复性替代做法？</textarea>
         </label>
         <div class="grid">
-            <label>Regions <small>(one per line)</small><textarea id="regions" rows="2" required>global</textarea></label>
-            <label>Languages <small>(one per line)</small><textarea id="languages" rows="2" required>en</textarea></label>
-            <label>Query seeds <small>(one per line)</small><textarea id="query-seeds" rows="2" required>user pain
+            <label>区域 <small>（每行一个）</small><textarea id="regions" rows="2" required>全球</textarea></label>
+            <label>语言 <small>（每行一个）</small><textarea id="languages" rows="2" required>英语</textarea></label>
+            <label>检索种子 <small>（每行一个）</small><textarea id="query-seeds" rows="2" required>user pain
 workaround</textarea></label>
         </div>
         <div class="grid">
-            <label>Time budget (minutes)<input id="time-budget" type="number" min="1" value="30" required></label>
-            <label>Item limit<input id="item-limit" type="number" min="1" value="20" required></label>
-            <label>Cost budget (cents)<input id="cost-budget" type="number" min="0" value="0" required></label>
+            <label>时间预算（分钟）<input id="time-budget" type="number" min="1" value="30" required></label>
+            <label>材料上限<input id="item-limit" type="number" min="1" value="20" required></label>
+            <label>成本预算（分）<input id="cost-budget" type="number" min="0" value="0" required></label>
         </div>
-        <label>Stop conditions <small>(one per line; must say when evidence is enough)</small>
-            <textarea id="stop-conditions" rows="2" required>Collect independent observations with original context</textarea>
+        <label>停止条件 <small>（每行一个；必须明确何时足够）</small>
+            <textarea id="stop-conditions" rows="2" required>收集带原始上下文的独立观察</textarea>
         </label>
-        <button id="create-mission" type="submit" disabled>Create bounded mission</button>
+        <button id="create-mission" type="submit" disabled>保存采集任务</button>
     </form>
-</article>
+    </article>
 
 <article id="execution-panel" hidden>
-    <header><strong>4. Preview, then execute explicitly</strong></header>
+    <header><strong>试运行，再执行</strong></header>
     <div class="grid">
         <label>Execution mode
             <select id="execution-mode">
@@ -101,22 +112,26 @@ workaround</textarea></label>
         <button id="queue-mission" type="button">Queue selected mode</button>
     </div>
 </article>
-
-<section id="mission-result" aria-live="polite">
-    <p><em>No mission has been created in this session.</em></p>
 </section>
 
-<section>
-    <header class="section-heading"><div><p class="eyebrow">Persistent collection assets</p><h2>Mission and run history</h2></div><button id="refresh-missions" type="button" class="secondary outline">Refresh</button></header>
+<aside id="operation-rail" class="collection-panel">
+<section id="mission-result" aria-live="polite">
+    <p><em>本次尚未创建采集任务。</em></p>
+</section>
+
+<section class="rail-history">
+    <header class="section-heading"><div><p class="eyebrow">持续积累的采集资产</p><h2>任务与运行记录</h2></div><button id="refresh-missions" type="button" class="secondary outline">刷新</button></header>
     <p><small>Saved missions and previews remain visible after a browser refresh. A preview is retained for audit, but it never creates candidate evidence.</small></p>
     <div id="mission-history"><p>Loading mission history…</p></div>
 </section>
 
-<section>
-    <header class="section-heading"><div><p class="eyebrow">Candidate evidence</p><h2>Evidence Inbox</h2></div><button id="refresh-evidence" type="button" class="secondary outline">Refresh</button></header>
+<section class="rail-inbox">
+    <header class="section-heading"><div><p class="eyebrow">候选证据</p><h2>信号收件箱</h2></div><button id="refresh-evidence" type="button" class="secondary outline">刷新</button></header>
     <p><small>Candidate evidence may be incomplete or misleading. It is not a validated demand and must be reviewed with its original material and lineage.</small></p>
     <div id="evidence-inbox"><p>Loading Evidence Inbox…</p></div>
 </section>
+</aside>
+</div>
 
 <script>
 const state = { source: null, config: null, mission: null, run: null };

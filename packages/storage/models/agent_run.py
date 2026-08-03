@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, String, Text, UniqueConstraint, func
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -16,6 +16,23 @@ class AgentRun(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    objective_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("discovery_objectives.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    boundary_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("approved_collection_boundaries.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    boundary_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    acquisition_plan_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("acquisition_plans.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    input_context: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     task_instruction: Mapped[str] = mapped_column(Text, nullable=False)
     evidence_bundle: Mapped[list[dict]] = mapped_column(JSONB, nullable=False)
     evidence_bundle_hash: Mapped[str] = mapped_column(String(64), nullable=False)

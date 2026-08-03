@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+
+{% block title %}Discovery Objective{% endblock %}
+{% block breadcrumb %}需求挑战 / <strong>发现目标</strong>{% endblock %}
+
+{% block content %}
+<section id="objective-workspace" data-objective-id="{{ objective_id }}">
+    <p class="eyebrow">DISCOVERY OBJECTIVE</p>
+    <h1 id="objective-title">正在加载发现目标…</h1>
+    <p id="objective-question"></p>
+    <p id="objective-status" role="status"></p>
+
+    <article>
+        <header><strong>Approved collection boundary</strong><small id="boundary-version"></small></header>
+        <dl id="boundary-details"></dl>
+    </article>
+
+    <article>
+        <header><strong>停止条件</strong></header>
+        <div class="grid">
+            <section><small>资源</small><ul id="resource-stop-conditions"></ul></section>
+            <section><small>证据</small><ul id="evidence-stop-conditions"></ul></section>
+            <section><small>决策</small><ul id="decision-stop-conditions"></ul></section>
+        </div>
+    </article>
+
+    <article id="assessments-panel">
+        <header><strong>Evidence-cited Assessment</strong></header>
+        <p>这是智能体或操作员基于证据的判断，不是已验证的市场需求。</p>
+        <ul id="assessments"></ul>
+        <p>当前最强反证（按评估强度排序，不等同于市场事实）</p>
+        <p id="strongest-counterevidence">尚无已记录反证。</p>
+        <p>尚未解决的未知项</p>
+        <ul id="assessment-unknowns"></ul>
+        <p>Need Hypothesis（仅草稿）</p>
+        <ul id="need-hypotheses"></ul>
+    </article>
+
+    <article>
+        <header><strong>采集计划</strong></header>
+        <ul id="acquisition-plans"></ul>
+        <p><a id="mission-console-link" href="/missions">进入采集控制台执行已批准计划 →</a></p>
+    </article>
+
+    <article id="agent-runs-panel">
+        <header><strong>受控 Discovery Agent 运行</strong></header>
+        <p>每次运行绑定当时的目标、边界、证据包和预算；边界变化后不得继续执行。</p>
+        <ul id="agent-runs"></ul>
+        <p>Agent 草案（仍需人工审阅，不会自动成为结论或计划）</p>
+        <ul id="agent-proposals"></ul>
+    </article>
+
+    <article id="mission-console-region">
+        <header><strong>采集控制台</strong></header>
+        <p>这是既有 Mission / Run 操作面；它保留独立控制台的采集、暂停、取消、重试与回放能力。</p>
+        <iframe
+            title="SourceOS 采集控制台"
+            src="/missions"
+            loading="lazy"
+            style="width: 100%; min-height: 760px; border: 0;"
+        ></iframe>
+    </article>
+
+    <article id="evidence-panel">
+        <header><strong>证据包</strong></header>
+        <p>候选证据不是需求结论，必须回看原始材料与上下文。</p>
+        <ul id="workspace-evidence"></ul>
+    </article>
+
+    <article id="approval-panel">
+        <header><strong>操作员审批与边界修订</strong></header>
+        <p>待批准请求</p>
+        <ul id="pending-approvals"></ul>
+        <div id="approval-actions" hidden></div>
+        <p>边界修订</p>
+        <ul id="boundary-revisions"></ul>
+        <form id="boundary-revision-form" hidden>
+            <label>修订理由<input name="reason" required></label>
+            <label>新增请求上限<input name="request_limit" type="number" min="1" required></label>
+            <button>以新边界恢复目标</button>
+        </form>
+    </article>
+
+    <article id="decision-record-panel" hidden>
+        <header><strong>决策记录与结果反馈</strong></header>
+        <p id="decision-record-summary"></p>
+        <p><small>结果反馈只用于校准下一次判断；它不是市场已验证，也不是智能体评分。</small></p>
+        <ul id="outcome-feedback"></ul>
+    </article>
+
+    <p id="objective-error" hidden></p>
+</section>
+<script>
+    const objectiveId = document.querySelector('#objective-workspace').dataset.objectiveId;
+    const renderList = (selector, values) => {
+        document.querySelector(selector).replaceChildren(...values.map((value) => {
+            const item = document.createElement('li'); item.textContent = value; return item;
+        }));
+    };
+    async function loadObjectiveWorkspace() {
+        const response = await fetch(`/api/discovery-objectives/${objectiveId}/workspace`);
+        if (!response.ok) throw new Error('Discovery Objective could not be loaded');
+        const workspace = await response.json();
+        const { objective, current_boundary: boundary } = workspace;
+        document.querySelector('#objective-title').textContent = objective.title;
+        document.querySelector('#objective-question').textContent = objective.question;
+        document.querySelector('#objective-status').textContent = `状态：${objective.status}`;
+        document.querySelector('#boundary-version').textContent = `v${boundary.version}`;
+        document.querySelector('#boundary-details').innerHTML = '';
+        for (const [label, value] of Object.entries({
+            '来源': boundary.approved_source_ids.join(', '), '工具': boundary.tool_allowlist.join(', '),
+            '请求上限': boundary.request_limit, '时间预算（分钟）': boundary.time_budget_minutes,
+            '成本预算（分）': boundary.cost_budget_cents,
+        })) {
+            const term = document.createElement('dt'); term.textContent = label;
+            const definition = document.createElement('dd'); definition.textContent = value;
+            document.querySelector('#boundary-details').append(term, definition);
+        }
+        renderList('#resource-stop-conditions', objective.resource_stop_conditions);
+        renderList('#evidence-stop-conditions', objective.evidence_stop_conditions);
+        renderList('#decision-stop-conditions', objective.decision_stop_conditions);
+        renderList(
+            '#pending-approvals',
+            workspace.pending_approvals.map((approval) => `${approval.request_type}: ${approval.reason}`),
+        );
+        renderList(
+            '#boundary-revisions',
+            workspace.boundary_revisions.map((revision) => `v${revision.boundary_version}: ${revision.reason}`),
+        );
+        renderList(
+            '#acquisition-plans',
+            workspace.plans.map((plan) => {
+                const runCount = Object.values(plan.mission_runs).flat().length;
+                const revision = plan.revision ? ` · 差异：${plan.revision.reason}` : '';
+                return `v${plan.version}: ${plan.question} · ${plan.missions.length} missions / ${runCount} runs${revision}`;
+            }),
+        );
+        renderList(
+            '#assessments',
+            workspace.assessments.map((assessment) => `${assessment.kind}: ${assessment.statement} · 引用：${assessment.evidence_ids.join(', ') || assessment.assessment_ids.join(', ')}`),
+        );
+        const strengthRank = {unknown: 0, weak: 1, moderate: 2, strong: 3};
+        const counterevidence = workspace.assessments
+            .filter((assessment) => assessment.kind === 'counterevidence')
+            .sort((left, right) => strengthRank[right.evidence_strength] - strengthRank[left.evidence_strength])[0];
+        document.querySelector('#strongest-counterevidence').textContent = counterevidence
+            ? `${counterevidence.statement} · 评估强度：${counterevidence.evidence_strength} · 引用：${counterevidence.evidence_ids.join(', ')}`
+            : '尚无已记录反证。';
+        renderList(
+            '#assessment-unknowns',
+            workspace.assessments.flatMap((assessment) => assessment.unknowns),
+        );
+        renderList(
+            '#need-hypotheses',
+            workspace.need_hypotheses.map((hypothesis) => `${hypothesis.status}: ${hypothesis.title}`),
+        );
+        renderList(
+            '#agent-runs',
+            workspace.agent_runs.map((run) => `${run.status}: ${run.prompt_version} · boundary v${run.boundary_version}`),
+        );
+        renderList(
+            '#agent-proposals',
+            workspace.agent_runs.map((run) => {
+                const proposal = run.output?.proposal;
+                if (!proposal) return `${run.status}: 尚无可审阅草案。`;
+                const summary = proposal.statement || proposal.reason || '未提供摘要';
+                const citations = proposal.evidence_ids?.join(', ') || '无证据引用';
+                return `${proposal.contract}: ${summary} · 引用：${citations} · 状态：${proposal.status || 'unknown'}`;
+            }),
+        );
+        renderList(
+            '#workspace-evidence',
+            workspace.evidence_bundle.map((evidence) => `${evidence.source_label}: ${evidence.observation}`),
+        );
+        const decisionPanel = document.querySelector('#decision-record-panel');
+        decisionPanel.hidden = workspace.decision_record === null;
+        if (workspace.decision_record) {
+            const record = workspace.decision_record;
+            document.querySelector('#decision-record-summary').textContent =
+                `${record.decision}: ${record.reason}`;
+            renderList(
+                '#outcome-feedback',
+                record.outcomes.map((outcome) => `${outcome.kind}: ${outcome.summary} (${outcome.reference})`),
+            );
+        }
+        const actions = document.querySelector('#approval-actions');
+        actions.hidden = objective.status !== 'pending_approval';
+        actions.replaceChildren(...workspace.pending_approvals.flatMap((approval) => {
+            const approve = document.createElement('button'); approve.textContent = `批准 ${approval.request_type}`;
+            approve.onclick = () => approveApproval(approval.id, 'approve');
+            const reject = document.createElement('button'); reject.textContent = `拒绝 ${approval.request_type}`;
+            reject.onclick = () => approveApproval(approval.id, 'reject');
+            return [approve, reject];
+        }));
+        document.querySelector('#boundary-revision-form').hidden = objective.status !== 'blocked';
+    }
+    async function approveApproval(approvalId, decision) {
+        const reason = window.prompt('记录理由'); if (!reason) return;
+        await fetch(`/api/discovery-objectives/${objectiveId}/approvals/${approvalId}/${decision}`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({operator: 'owner', reason}),
+        });
+        await loadObjectiveWorkspace();
+    }
+    document.querySelector('#boundary-revision-form').onsubmit = async (event) => {
+        event.preventDefault(); const data = new FormData(event.currentTarget);
+        await fetch(`/api/discovery-objectives/${objectiveId}/boundary-revisions`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({operator: 'owner', reason: data.get('reason'), boundary_patch: {request_limit: Number(data.get('request_limit'))}}),
+        });
+        await loadObjectiveWorkspace();
+    };
+    loadObjectiveWorkspace().catch((error) => {
+        const target = document.querySelector('#objective-error'); target.hidden = false; target.textContent = error.message;
+    });
+</script>
+{% endblock %}

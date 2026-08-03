@@ -38,6 +38,11 @@ from packages.storage.models.acquisition_mission_run import AcquisitionMissionRu
 from packages.storage.models.acquisition_mission_run_signal import (
     AcquisitionMissionRunSignal,
 )
+from packages.storage.models.acquisition_plan import AcquisitionPlan
+from packages.storage.models.discovery_objective import (
+    ApprovedCollectionBoundary,
+    DiscoveryObjective,
+)
 from packages.storage.models.external_signal import ExternalSignal
 from packages.storage.models.source import Source
 
@@ -57,6 +62,26 @@ async def _get_mission_or_404(db: AsyncSession, mission_id: uuid.UUID) -> Acquis
         raise HTTPException(
             status_code=422, detail="Acquisition Mission has no pinned source version"
         )
+    if mission.acquisition_plan_id is not None:
+        plan = await db.get(AcquisitionPlan, mission.acquisition_plan_id)
+        if plan is None:
+            raise HTTPException(status_code=409, detail="Mission Plan is no longer available")
+        objective = await db.get(DiscoveryObjective, plan.objective_id)
+        current_boundary = await db.scalar(
+            select(ApprovedCollectionBoundary)
+            .where(ApprovedCollectionBoundary.objective_id == plan.objective_id)
+            .order_by(ApprovedCollectionBoundary.version.desc())
+        )
+        if (
+            objective is None
+            or objective.status != "active"
+            or current_boundary is None
+            or plan.boundary_id != current_boundary.id
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="Plan is no longer permitted by the current approved boundary",
+            )
     return mission
 
 
@@ -88,6 +113,7 @@ async def _persist_signal_drafts(
                 {
                     "id": uuid.uuid4(),
                     "mission_run_id": run.id,
+                    "source_id": uuid.UUID(run.input_snapshot["source"]["id"]),
                     "lineage_key": draft.lineage_key,
                     "raw_artifact_key": draft.raw_artifact_key,
                     "source_label": draft.source_label,
