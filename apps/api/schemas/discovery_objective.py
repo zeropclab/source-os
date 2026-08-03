@@ -15,6 +15,18 @@ class InitialCollectionBoundary(BaseModel):
     request_limit: int = Field(gt=0)
     time_budget_minutes: int = Field(gt=0)
     cost_budget_cents: int = Field(ge=0)
+    credential_scope: list[NonEmptyText] = Field(default_factory=list)
+    evidence_conditions: list[NonEmptyText] = Field(default_factory=list)
+
+
+class BoundaryPatch(BaseModel):
+    approved_source_ids: list[uuid.UUID] | None = Field(default=None, min_length=1)
+    tool_allowlist: list[NonEmptyText] | None = Field(default=None, min_length=1)
+    request_limit: int | None = Field(default=None, gt=0)
+    time_budget_minutes: int | None = Field(default=None, gt=0)
+    cost_budget_cents: int | None = Field(default=None, ge=0)
+    credential_scope: list[NonEmptyText] | None = None
+    evidence_conditions: list[NonEmptyText] | None = None
 
 
 class DiscoveryObjectiveCreate(BaseModel):
@@ -35,6 +47,8 @@ class ApprovedCollectionBoundaryResponse(BaseModel):
     request_limit: int
     time_budget_minutes: int
     cost_budget_cents: int
+    credential_scope: list[str]
+    evidence_conditions: list[str]
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -60,3 +74,53 @@ class DiscoveryObjectiveWorkspaceResponse(BaseModel):
     current_boundary: ApprovedCollectionBoundaryResponse
     plans: list[object] = Field(default_factory=list)
     assessments: list[object] = Field(default_factory=list)
+    pending_approvals: list["OperatorApprovalResponse"] = Field(default_factory=list)
+    boundary_revisions: list["OperatorBoundaryRevisionResponse"] = Field(default_factory=list)
+
+
+class OperatorApprovalCreate(BaseModel):
+    request_type: NonEmptyText = Field(max_length=64)
+    reason: NonEmptyText
+    requested_boundary_patch: BoundaryPatch
+
+
+class OperatorApprovalDecision(BaseModel):
+    operator: NonEmptyText = Field(max_length=120)
+    reason: NonEmptyText
+
+
+class OperatorApprovalResponse(BaseModel):
+    id: uuid.UUID
+    objective_id: uuid.UUID
+    request_type: str
+    reason: str
+    requested_boundary_patch: dict
+    status: str
+    operator: str | None
+    decision_reason: str | None
+    decided_at: datetime | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class OperatorBoundaryRevisionCreate(BaseModel):
+    operator: NonEmptyText = Field(max_length=120)
+    reason: NonEmptyText
+    boundary_patch: BoundaryPatch
+
+
+class OperatorBoundaryRevisionResponse(BaseModel):
+    id: uuid.UUID
+    objective_id: uuid.UUID
+    boundary_id: uuid.UUID
+    boundary_version: int
+    approval_id: uuid.UUID | None
+    operator: str
+    reason: str
+    boundary_patch: dict
+    created_at: datetime
+
+
+class ObjectiveBlockRequest(BaseModel):
+    reason: NonEmptyText

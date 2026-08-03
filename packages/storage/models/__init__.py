@@ -4,7 +4,12 @@ from .acquisition_mission_run_signal import AcquisitionMissionRunSignal
 from .agent_run import AgentRun
 from .comment import Comment
 from .content_version import ContentVersion
-from .discovery_objective import ApprovedCollectionBoundary, DiscoveryObjective
+from .discovery_objective import (
+    ApprovedCollectionBoundary,
+    DiscoveryObjective,
+    OperatorApproval,
+    OperatorBoundaryRevision,
+)
 from .external_signal import ExternalSignal, SignalTriageEvent
 from .fetch_job import FetchJob
 from .media_asset import MediaAsset
@@ -47,6 +52,8 @@ __all__ = [
     "ContentVersion",
     "DiscoveryObjective",
     "ApprovedCollectionBoundary",
+    "OperatorApproval",
+    "OperatorBoundaryRevision",
     "ExternalSignal",
     "FetchJob",
     "Comment",

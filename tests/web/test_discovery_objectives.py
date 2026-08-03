@@ -10,3 +10,5 @@ async def test_objective_workspace_page_loads_the_durable_workspace_contract(cli
     assert 'id="objective-status"' in page
     assert "/api/discovery-objectives/${objectiveId}/workspace" in page
     assert "Approved collection boundary" in page
+    assert "pending_approvals" in page
+    assert "boundary_revisions" in page

@@ -24,6 +24,14 @@
         </div>
     </article>
 
+    <article>
+        <header><strong>操作员审批与边界修订</strong></header>
+        <p>待批准请求</p>
+        <ul id="pending-approvals"></ul>
+        <p>边界修订</p>
+        <ul id="boundary-revisions"></ul>
+    </article>
+
     <p id="objective-error" hidden></p>
 </section>
 <script>
@@ -55,6 +63,14 @@
         renderList('#resource-stop-conditions', objective.resource_stop_conditions);
         renderList('#evidence-stop-conditions', objective.evidence_stop_conditions);
         renderList('#decision-stop-conditions', objective.decision_stop_conditions);
+        renderList(
+            '#pending-approvals',
+            workspace.pending_approvals.map((approval) => `${approval.request_type}: ${approval.reason}`),
+        );
+        renderList(
+            '#boundary-revisions',
+            workspace.boundary_revisions.map((revision) => `v${revision.boundary_version}: ${revision.reason}`),
+        );
     }
     loadObjectiveWorkspace().catch((error) => {
         const target = document.querySelector('#objective-error'); target.hidden = false; target.textContent = error.message;

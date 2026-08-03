@@ -1,6 +1,7 @@
 """Create and read operator-bounded Discovery Objectives."""
 
 import uuid
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -11,13 +12,22 @@ from sqlalchemy.orm import selectinload
 from apps.api.dependencies import get_db
 from apps.api.schemas.discovery_objective import (
     ApprovedCollectionBoundaryResponse,
+    BoundaryPatch,
     DiscoveryObjectiveCreate,
     DiscoveryObjectiveResponse,
     DiscoveryObjectiveWorkspaceResponse,
+    ObjectiveBlockRequest,
+    OperatorApprovalCreate,
+    OperatorApprovalDecision,
+    OperatorApprovalResponse,
+    OperatorBoundaryRevisionCreate,
+    OperatorBoundaryRevisionResponse,
 )
 from packages.storage.models.discovery_objective import (
     ApprovedCollectionBoundary,
     DiscoveryObjective,
+    OperatorApproval,
+    OperatorBoundaryRevision,
 )
 from packages.storage.models.source import Source
 
@@ -48,20 +58,81 @@ def _response_for(objective: DiscoveryObjective) -> DiscoveryObjectiveResponse:
     )
 
 
+def _boundary_response(boundary: ApprovedCollectionBoundary) -> ApprovedCollectionBoundaryResponse:
+    return ApprovedCollectionBoundaryResponse.model_validate(boundary)
+
+
+def _revision_response(
+    revision: OperatorBoundaryRevision, boundary_version: int
+) -> OperatorBoundaryRevisionResponse:
+    return OperatorBoundaryRevisionResponse(
+        id=revision.id,
+        objective_id=revision.objective_id,
+        boundary_id=revision.boundary_id,
+        boundary_version=boundary_version,
+        approval_id=revision.approval_id,
+        operator=revision.operator,
+        reason=revision.reason,
+        boundary_patch=revision.boundary_patch,
+        created_at=revision.created_at,
+    )
+
+
+async def _validate_source_ids(db: AsyncSession, source_ids: list[uuid.UUID]) -> None:
+    if len(set(source_ids)) != len(source_ids):
+        raise HTTPException(status_code=422, detail="Approved source IDs must not repeat")
+    found_source_ids = set(
+        (await db.scalars(select(Source.id).where(Source.id.in_(source_ids)))).all()
+    )
+    if found_source_ids != set(source_ids):
+        raise HTTPException(status_code=422, detail="An approved source does not exist")
+
+
+async def _apply_boundary_patch(
+    db: AsyncSession,
+    objective: DiscoveryObjective,
+    current: ApprovedCollectionBoundary,
+    patch: BoundaryPatch,
+) -> tuple[ApprovedCollectionBoundary, dict]:
+    values = patch.model_dump(exclude_none=True)
+    if not values:
+        raise HTTPException(status_code=422, detail="Boundary revision requires a material delta")
+    if "approved_source_ids" in values:
+        await _validate_source_ids(db, values["approved_source_ids"])
+        values["approved_source_ids"] = [
+            str(source_id) for source_id in values["approved_source_ids"]
+        ]
+
+    current_values = {
+        "approved_source_ids": current.approved_source_ids,
+        "tool_allowlist": current.tool_allowlist,
+        "request_limit": current.request_limit,
+        "time_budget_minutes": current.time_budget_minutes,
+        "cost_budget_cents": current.cost_budget_cents,
+        "credential_scope": current.credential_scope,
+        "evidence_conditions": current.evidence_conditions,
+    }
+    if all(current_values[key] == value for key, value in values.items()):
+        raise HTTPException(status_code=422, detail="Boundary revision must change an allowance")
+
+    next_values = current_values | values
+    boundary = ApprovedCollectionBoundary(
+        objective=objective,
+        version=current.version + 1,
+        **next_values,
+    )
+    db.add(boundary)
+    await db.flush()
+    return boundary, values
+
+
 @router.post("", response_model=DiscoveryObjectiveResponse, status_code=201)
 async def create_discovery_objective(
     body: DiscoveryObjectiveCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     source_ids = body.initial_boundary.approved_source_ids
-    if len(set(source_ids)) != len(source_ids):
-        raise HTTPException(status_code=422, detail="Approved source IDs must not repeat")
-
-    found_source_ids = set(
-        (await db.scalars(select(Source.id).where(Source.id.in_(source_ids)))).all()
-    )
-    if found_source_ids != set(source_ids):
-        raise HTTPException(status_code=422, detail="An approved source does not exist")
+    await _validate_source_ids(db, source_ids)
 
     objective = DiscoveryObjective(
         title=body.title,
@@ -78,6 +149,8 @@ async def create_discovery_objective(
         request_limit=body.initial_boundary.request_limit,
         time_budget_minutes=body.initial_boundary.time_budget_minutes,
         cost_budget_cents=body.initial_boundary.cost_budget_cents,
+        credential_scope=body.initial_boundary.credential_scope,
+        evidence_conditions=body.initial_boundary.evidence_conditions,
     )
     db.add_all([objective, boundary])
     await db.commit()
@@ -108,4 +181,191 @@ async def get_discovery_objective_workspace(
     return DiscoveryObjectiveWorkspaceResponse(
         objective=response,
         current_boundary=response.current_boundary,
+        pending_approvals=list(
+            (
+                await db.scalars(
+                    select(OperatorApproval)
+                    .where(
+                        OperatorApproval.objective_id == objective_id,
+                        OperatorApproval.status == "pending",
+                    )
+                    .order_by(OperatorApproval.created_at.desc())
+                )
+            ).all()
+        ),
+        boundary_revisions=[
+            _revision_response(revision, boundary.version)
+            for revision, boundary in (
+                await db.execute(
+                    select(OperatorBoundaryRevision, ApprovedCollectionBoundary)
+                    .join(
+                        ApprovedCollectionBoundary,
+                        OperatorBoundaryRevision.boundary_id == ApprovedCollectionBoundary.id,
+                    )
+                    .where(OperatorBoundaryRevision.objective_id == objective_id)
+                    .order_by(OperatorBoundaryRevision.created_at.desc())
+                )
+            ).all()
+        ],
     )
+
+
+@router.post("/{objective_id}/approvals", response_model=OperatorApprovalResponse, status_code=201)
+async def request_operator_approval(
+    objective_id: uuid.UUID,
+    body: OperatorApprovalCreate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    objective = await db.scalar(_objective_with_boundaries(objective_id))
+    if objective is None:
+        raise HTTPException(status_code=404, detail="Discovery Objective not found")
+    if objective.status != "active":
+        raise HTTPException(status_code=409, detail="Only an active objective can request approval")
+    if not body.requested_boundary_patch.model_dump(exclude_none=True):
+        raise HTTPException(status_code=422, detail="Approval request requires a boundary delta")
+
+    approval = OperatorApproval(
+        objective_id=objective_id,
+        request_type=body.request_type,
+        reason=body.reason,
+        requested_boundary_patch=body.requested_boundary_patch.model_dump(
+            exclude_none=True, mode="json"
+        ),
+    )
+    objective.status = "pending_approval"
+    db.add(approval)
+    await db.commit()
+    return approval
+
+
+@router.post(
+    "/{objective_id}/approvals/{approval_id}/approve",
+    response_model=OperatorApprovalResponse,
+)
+async def approve_operator_request(
+    objective_id: uuid.UUID,
+    approval_id: uuid.UUID,
+    body: OperatorApprovalDecision,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    objective = await db.scalar(_objective_with_boundaries(objective_id))
+    approval = await db.scalar(
+        select(OperatorApproval).where(
+            OperatorApproval.id == approval_id,
+            OperatorApproval.objective_id == objective_id,
+        )
+    )
+    if objective is None or approval is None:
+        raise HTTPException(status_code=404, detail="Approval request not found")
+    if objective.status != "pending_approval" or approval.status != "pending":
+        raise HTTPException(status_code=409, detail="Approval request is not awaiting a decision")
+
+    boundary, normalized_patch = await _apply_boundary_patch(
+        db,
+        objective,
+        objective.boundaries[-1],
+        BoundaryPatch.model_validate(approval.requested_boundary_patch),
+    )
+    revision = OperatorBoundaryRevision(
+        objective_id=objective_id,
+        boundary_id=boundary.id,
+        approval_id=approval.id,
+        operator=body.operator,
+        reason=body.reason,
+        boundary_patch=normalized_patch,
+    )
+    approval.status = "approved"
+    approval.operator = body.operator
+    approval.decision_reason = body.reason
+    approval.decided_at = datetime.now(UTC)
+    objective.status = "active"
+    db.add(revision)
+    await db.commit()
+    return approval
+
+
+@router.post(
+    "/{objective_id}/approvals/{approval_id}/reject",
+    response_model=OperatorApprovalResponse,
+)
+async def reject_operator_request(
+    objective_id: uuid.UUID,
+    approval_id: uuid.UUID,
+    body: OperatorApprovalDecision,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    objective = await db.scalar(
+        select(DiscoveryObjective).where(DiscoveryObjective.id == objective_id)
+    )
+    approval = await db.scalar(
+        select(OperatorApproval).where(
+            OperatorApproval.id == approval_id,
+            OperatorApproval.objective_id == objective_id,
+        )
+    )
+    if objective is None or approval is None:
+        raise HTTPException(status_code=404, detail="Approval request not found")
+    if objective.status != "pending_approval" or approval.status != "pending":
+        raise HTTPException(status_code=409, detail="Approval request is not awaiting a decision")
+
+    approval.status = "rejected"
+    approval.operator = body.operator
+    approval.decision_reason = body.reason
+    approval.decided_at = datetime.now(UTC)
+    objective.status = "active"
+    await db.commit()
+    return approval
+
+
+@router.post("/{objective_id}/block", response_model=DiscoveryObjectiveResponse)
+async def block_discovery_objective(
+    objective_id: uuid.UUID,
+    body: ObjectiveBlockRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    objective = await db.scalar(_objective_with_boundaries(objective_id))
+    if objective is None:
+        raise HTTPException(status_code=404, detail="Discovery Objective not found")
+    if objective.status != "active":
+        raise HTTPException(status_code=409, detail="Only an active objective can become blocked")
+    objective.status = "blocked"
+    objective.block_reason = body.reason
+    await db.commit()
+    blocked = await db.scalar(_objective_with_boundaries(objective_id))
+    return _response_for(blocked)
+
+
+@router.post(
+    "/{objective_id}/boundary-revisions",
+    response_model=OperatorBoundaryRevisionResponse,
+    status_code=201,
+)
+async def reactivate_with_boundary_revision(
+    objective_id: uuid.UUID,
+    body: OperatorBoundaryRevisionCreate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    objective = await db.scalar(_objective_with_boundaries(objective_id))
+    if objective is None:
+        raise HTTPException(status_code=404, detail="Discovery Objective not found")
+    if objective.status != "blocked":
+        raise HTTPException(
+            status_code=409,
+            detail="Boundary revision can reactivate only a blocked objective",
+        )
+
+    boundary, normalized_patch = await _apply_boundary_patch(
+        db, objective, objective.boundaries[-1], body.boundary_patch
+    )
+    revision = OperatorBoundaryRevision(
+        objective_id=objective_id,
+        boundary_id=boundary.id,
+        operator=body.operator,
+        reason=body.reason,
+        boundary_patch=normalized_patch,
+    )
+    objective.status = "active"
+    objective.block_reason = None
+    db.add(revision)
+    await db.commit()
+    return _revision_response(revision, boundary.version)
