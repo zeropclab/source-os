@@ -16,8 +16,10 @@ from apps.api.schemas.discovery_objective import (
     AcquisitionPlanResponse,
     ApprovedCollectionBoundaryResponse,
     BoundaryPatch,
+    DecisionRecordCreate,
     DiscoveryAssessmentCreate,
     DiscoveryAssessmentResponse,
+    DiscoveryDecisionRecordResponse,
     DiscoveryObjectiveCreate,
     DiscoveryObjectiveResponse,
     DiscoveryObjectiveWorkspaceResponse,
@@ -30,11 +32,14 @@ from apps.api.schemas.discovery_objective import (
     OperatorApprovalResponse,
     OperatorBoundaryRevisionCreate,
     OperatorBoundaryRevisionResponse,
+    OutcomeFeedbackCreate,
+    OutcomeFeedbackResponse,
     PlanRevisionResponse,
 )
 from apps.api.schemas.need_issue import NeedIssueFromAcceptedSignalCreate
 from packages.storage.models.acquisition_plan import AcquisitionPlan, PlanRevision
 from packages.storage.models.discovery_assessment import DiscoveryAssessment, NeedHypothesis
+from packages.storage.models.discovery_decision import DiscoveryDecisionRecord, OutcomeFeedback
 from packages.storage.models.discovery_objective import (
     ApprovedCollectionBoundary,
     DiscoveryObjective,
@@ -130,6 +135,32 @@ async def _plan_response(db: AsyncSession, plan: AcquisitionPlan) -> Acquisition
             else None
         ),
         missions=[mission.id for mission in plan.missions],
+    )
+
+
+async def _decision_record_response(
+    db: AsyncSession, record: DiscoveryDecisionRecord
+) -> DiscoveryDecisionRecordResponse:
+    outcomes = list(
+        (
+            await db.scalars(
+                select(OutcomeFeedback)
+                .where(OutcomeFeedback.decision_record_id == record.id)
+                .order_by(OutcomeFeedback.created_at)
+            )
+        ).all()
+    )
+    return DiscoveryDecisionRecordResponse(
+        id=record.id,
+        objective_id=record.objective_id,
+        decision=record.decision,
+        reason=record.reason,
+        support_assessment_ids=record.support_assessment_ids,
+        counter_assessment_ids=record.counter_assessment_ids,
+        unknowns=record.unknowns,
+        resource_usage=record.resource_usage,
+        created_at=record.created_at,
+        outcomes=[OutcomeFeedbackResponse.model_validate(outcome) for outcome in outcomes],
     )
 
 
@@ -243,6 +274,9 @@ async def get_discovery_objective_workspace(
             )
         ).all()
     )
+    decision_record = await db.scalar(
+        select(DiscoveryDecisionRecord).where(DiscoveryDecisionRecord.objective_id == objective_id)
+    )
     return DiscoveryObjectiveWorkspaceResponse(
         objective=response,
         current_boundary=response.current_boundary,
@@ -282,6 +316,11 @@ async def get_discovery_objective_workspace(
                 )
             ).all()
         ],
+        decision_record=(
+            await _decision_record_response(db, decision_record)
+            if decision_record is not None
+            else None
+        ),
     )
 
 
@@ -414,6 +453,70 @@ async def promote_need_hypothesis(
     hypothesis.promoted_need_issue_id = need.id
     await db.commit()
     return need
+
+
+@router.post(
+    "/{objective_id}/decision-records",
+    response_model=DiscoveryDecisionRecordResponse,
+    status_code=201,
+)
+async def close_with_decision_record(
+    objective_id: uuid.UUID,
+    body: DecisionRecordCreate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    objective = await db.get(DiscoveryObjective, objective_id)
+    if objective is None:
+        raise HTTPException(status_code=404, detail="Discovery Objective not found")
+    if objective.status == "completed":
+        raise HTTPException(status_code=409, detail="Discovery Objective already closed")
+    cited_assessment_ids = set(body.support_assessment_ids + body.counter_assessment_ids)
+    if cited_assessment_ids:
+        citations = list(
+            (
+                await db.scalars(
+                    select(DiscoveryAssessment).where(
+                        DiscoveryAssessment.id.in_(cited_assessment_ids),
+                        DiscoveryAssessment.objective_id == objective_id,
+                    )
+                )
+            ).all()
+        )
+        if len(citations) != len(cited_assessment_ids):
+            raise HTTPException(
+                status_code=422,
+                detail="Decision Record cites an assessment outside this objective",
+            )
+    record = DiscoveryDecisionRecord(objective_id=objective_id, **body.model_dump(mode="json"))
+    objective.status = "completed"
+    db.add(record)
+    await db.commit()
+    return await _decision_record_response(db, record)
+
+
+@router.post(
+    "/{objective_id}/decision-records/{record_id}/outcomes",
+    response_model=OutcomeFeedbackResponse,
+    status_code=201,
+)
+async def append_outcome_feedback(
+    objective_id: uuid.UUID,
+    record_id: uuid.UUID,
+    body: OutcomeFeedbackCreate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    record = await db.scalar(
+        select(DiscoveryDecisionRecord).where(
+            DiscoveryDecisionRecord.id == record_id,
+            DiscoveryDecisionRecord.objective_id == objective_id,
+        )
+    )
+    if record is None:
+        raise HTTPException(status_code=404, detail="Discovery Decision Record not found")
+    outcome = OutcomeFeedback(decision_record_id=record_id, **body.model_dump())
+    db.add(outcome)
+    await db.commit()
+    return OutcomeFeedbackResponse.model_validate(outcome)
 
 
 @router.post("/{objective_id}/plans", response_model=AcquisitionPlanResponse, status_code=201)

@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, StringConstraints
 
@@ -76,6 +76,7 @@ class DiscoveryObjectiveWorkspaceResponse(BaseModel):
     assessments: list["DiscoveryAssessmentResponse"] = Field(default_factory=list)
     pending_approvals: list["OperatorApprovalResponse"] = Field(default_factory=list)
     boundary_revisions: list["OperatorBoundaryRevisionResponse"] = Field(default_factory=list)
+    decision_record: "DiscoveryDecisionRecordResponse | None" = None
 
 
 class OperatorApprovalCreate(BaseModel):
@@ -208,3 +209,35 @@ class NeedHypothesisResponse(NeedHypothesisCreate):
 
 class NeedHypothesisPromotion(BaseModel):
     operator: NonEmptyText
+
+
+class DecisionRecordCreate(BaseModel):
+    decision: Literal["promoted", "rewritten", "abandoned", "blocked"]
+    reason: NonEmptyText
+    support_assessment_ids: list[uuid.UUID] = Field(default_factory=list)
+    counter_assessment_ids: list[uuid.UUID] = Field(default_factory=list)
+    unknowns: list[NonEmptyText] = Field(default_factory=list)
+    resource_usage: dict = Field(default_factory=dict)
+
+
+class OutcomeFeedbackCreate(BaseModel):
+    kind: NonEmptyText
+    reference: NonEmptyText
+    summary: NonEmptyText
+
+
+class OutcomeFeedbackResponse(OutcomeFeedbackCreate):
+    id: uuid.UUID
+    decision_record_id: uuid.UUID
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class DiscoveryDecisionRecordResponse(DecisionRecordCreate):
+    id: uuid.UUID
+    objective_id: uuid.UUID
+    created_at: datetime
+    outcomes: list[OutcomeFeedbackResponse] = Field(default_factory=list)
+
+    model_config = {"from_attributes": True}

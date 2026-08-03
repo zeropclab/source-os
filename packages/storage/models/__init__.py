@@ -6,6 +6,7 @@ from .agent_run import AgentRun
 from .comment import Comment
 from .content_version import ContentVersion
 from .discovery_assessment import DiscoveryAssessment, NeedHypothesis
+from .discovery_decision import DiscoveryDecisionRecord, OutcomeFeedback
 from .discovery_objective import (
     ApprovedCollectionBoundary,
     DiscoveryObjective,
@@ -60,6 +61,8 @@ __all__ = [
     "OperatorBoundaryRevision",
     "DiscoveryAssessment",
     "NeedHypothesis",
+    "DiscoveryDecisionRecord",
+    "OutcomeFeedback",
     "ExternalSignal",
     "FetchJob",
     "Comment",

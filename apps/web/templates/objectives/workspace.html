@@ -43,6 +43,13 @@
         <ul id="acquisition-plans"></ul>
     </article>
 
+    <article id="decision-record-panel" hidden>
+        <header><strong>决策记录与结果反馈</strong></header>
+        <p id="decision-record-summary"></p>
+        <p><small>结果反馈只用于校准下一次判断；它不是市场已验证，也不是智能体评分。</small></p>
+        <ul id="outcome-feedback"></ul>
+    </article>
+
     <p id="objective-error" hidden></p>
 </section>
 <script>
@@ -86,6 +93,17 @@
             '#acquisition-plans',
             workspace.plans.map((plan) => `v${plan.version}: ${plan.question}`),
         );
+        const decisionPanel = document.querySelector('#decision-record-panel');
+        decisionPanel.hidden = workspace.decision_record === null;
+        if (workspace.decision_record) {
+            const record = workspace.decision_record;
+            document.querySelector('#decision-record-summary').textContent =
+                `${record.decision}: ${record.reason}`;
+            renderList(
+                '#outcome-feedback',
+                record.outcomes.map((outcome) => `${outcome.kind}: ${outcome.summary} (${outcome.reference})`),
+            );
+        }
         const actions = document.querySelector('#approval-actions');
         actions.hidden = objective.status !== 'pending_approval';
         actions.replaceChildren(...workspace.pending_approvals.flatMap((approval) => {

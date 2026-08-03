@@ -16,3 +16,6 @@ async def test_objective_workspace_page_loads_the_durable_workspace_contract(cli
     assert 'id="approval-actions"' in page
     assert 'id="boundary-revision-form"' in page
     assert "approveApproval" in page
+    assert 'id="decision-record-panel"' in page
+    assert "workspace.decision_record" in page
+    assert "校准下一次判断" in page
