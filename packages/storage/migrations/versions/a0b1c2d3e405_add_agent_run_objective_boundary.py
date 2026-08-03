@@ -18,10 +18,20 @@ def upgrade() -> None:
     op.add_column("agent_runs", sa.Column("boundary_id", sa.UUID(), nullable=True))
     op.add_column("agent_runs", sa.Column("boundary_version", sa.Integer(), nullable=True))
     op.create_foreign_key(
-        "fk_agent_run_objective", "agent_runs", "discovery_objectives", ["objective_id"], ["id"], ondelete="RESTRICT"
+        "fk_agent_run_objective",
+        "agent_runs",
+        "discovery_objectives",
+        ["objective_id"],
+        ["id"],
+        ondelete="RESTRICT",
     )
     op.create_foreign_key(
-        "fk_agent_run_boundary", "agent_runs", "approved_collection_boundaries", ["boundary_id"], ["id"], ondelete="RESTRICT"
+        "fk_agent_run_boundary",
+        "agent_runs",
+        "approved_collection_boundaries",
+        ["boundary_id"],
+        ["id"],
+        ondelete="RESTRICT",
     )
 
 
