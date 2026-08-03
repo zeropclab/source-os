@@ -46,6 +46,7 @@ async def test_assessment_requires_citations_and_workspace_exposes_its_judgement
             "evidence_ids": [signal["id"]],
             "unknowns": ["How common this is across independent operators"],
             "recommendation": "Seek counterevidence from an automated workflow.",
+            "evidence_strength": "moderate",
         },
     )
     workspace = await client.get(f"/api/discovery-objectives/{objective['id']}/workspace")
@@ -53,6 +54,7 @@ async def test_assessment_requires_citations_and_workspace_exposes_its_judgement
     assert rejected.status_code == 422
     assert created.status_code == 201
     assert created.json()["version"] == 1
+    assert created.json()["evidence_strength"] == "moderate"
     assert workspace.json()["assessments"][0]["evidence_ids"] == [signal["id"]]
 
 

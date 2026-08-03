@@ -28,7 +28,7 @@
         <header><strong>Evidence-cited Assessment</strong></header>
         <p>这是智能体或操作员基于证据的判断，不是已验证的市场需求。</p>
         <ul id="assessments"></ul>
-        <p>已记录反证（尚未建立强度排序）</p>
+        <p>当前最强反证（按评估强度排序，不等同于市场事实）</p>
         <p id="strongest-counterevidence">尚无已记录反证。</p>
         <p>尚未解决的未知项</p>
         <ul id="assessment-unknowns"></ul>
@@ -126,9 +126,12 @@
             '#assessments',
             workspace.assessments.map((assessment) => `${assessment.kind}: ${assessment.statement} · 引用：${assessment.evidence_ids.join(', ') || assessment.assessment_ids.join(', ')}`),
         );
-        const counterevidence = workspace.assessments.find((assessment) => assessment.kind === 'counterevidence');
+        const strengthRank = {unknown: 0, weak: 1, moderate: 2, strong: 3};
+        const counterevidence = workspace.assessments
+            .filter((assessment) => assessment.kind === 'counterevidence')
+            .sort((left, right) => strengthRank[right.evidence_strength] - strengthRank[left.evidence_strength])[0];
         document.querySelector('#strongest-counterevidence').textContent = counterevidence
-            ? `${counterevidence.statement} · 引用：${counterevidence.evidence_ids.join(', ')}`
+            ? `${counterevidence.statement} · 评估强度：${counterevidence.evidence_strength} · 引用：${counterevidence.evidence_ids.join(', ')}`
             : '尚无已记录反证。';
         renderList(
             '#assessment-unknowns',

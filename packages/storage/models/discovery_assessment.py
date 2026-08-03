@@ -30,6 +30,9 @@ class DiscoveryAssessment(Base):
     unknowns: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
     coverage_gaps: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
     recommendation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evidence_strength: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="unknown", server_default="unknown"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

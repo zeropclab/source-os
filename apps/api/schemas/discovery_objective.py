@@ -182,6 +182,7 @@ class DiscoveryAssessmentCreate(BaseModel):
     unknowns: list[NonEmptyText] = Field(default_factory=list)
     coverage_gaps: list[NonEmptyText] = Field(default_factory=list)
     recommendation: NonEmptyText | None = None
+    evidence_strength: Literal["unknown", "weak", "moderate", "strong"] = "unknown"
 
 
 class DiscoveryAssessmentResponse(DiscoveryAssessmentCreate):
