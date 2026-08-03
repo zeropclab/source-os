@@ -14,9 +14,11 @@ from apps.api.dependencies import get_db
 from apps.api.schemas.agent_run import AgentRunCreate, AgentRunOperatorDecision, AgentRunResponse
 from apps.api.services.pi_runtime import PiRuntimeError, run_pi_proposal
 from packages.storage.models.agent_run import AgentRun
+from packages.storage.models.discovery_objective import DiscoveryObjective
 from packages.storage.models.external_signal import ExternalSignal
 
 router = APIRouter()
+objective_router = APIRouter()
 _TOOL_ALLOWLIST: list[str] = []
 
 
@@ -80,6 +82,85 @@ async def create_agent_run(
             "max_cost_cents": body.max_cost_cents,
         },
         tool_allowlist=_TOOL_ALLOWLIST,
+        tool_audit=[],
+        usage={"tool_calls": 0, "tokens": 0, "cost_cents": 0},
+        errors=[],
+        operator_changes=[],
+        status="created",
+    )
+    db.add(run)
+    await db.commit()
+    await db.refresh(run)
+    return run
+
+
+@objective_router.post(
+    "/{objective_id}/agent-runs", response_model=AgentRunResponse, status_code=201
+)
+async def create_objective_agent_run(
+    objective_id: uuid.UUID,
+    body: AgentRunCreate,
+    response: Response,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    objective = await db.get(DiscoveryObjective, objective_id)
+    if objective is None:
+        raise HTTPException(status_code=404, detail="Discovery Objective not found")
+    if objective.status != "active":
+        raise HTTPException(
+            status_code=409, detail="Only an active objective can run the Discovery Agent"
+        )
+    from packages.storage.models.discovery_objective import ApprovedCollectionBoundary
+
+    boundary = await db.scalar(
+        select(ApprovedCollectionBoundary)
+        .where(ApprovedCollectionBoundary.objective_id == objective_id)
+        .order_by(ApprovedCollectionBoundary.version.desc())
+    )
+    if (
+        body.max_tool_calls > boundary.request_limit
+        or body.max_cost_cents > boundary.cost_budget_cents
+    ):
+        raise HTTPException(status_code=422, detail="Agent budget is outside the approved boundary")
+    existing = await db.scalar(
+        select(AgentRun).where(AgentRun.idempotency_key == body.idempotency_key)
+    )
+    if existing is not None:
+        response.status_code = 200
+        return existing
+    signals = list(
+        await db.scalars(
+            select(ExternalSignal).where(ExternalSignal.id.in_(body.evidence_signal_ids))
+        )
+    )
+    if len(signals) != len(body.evidence_signal_ids):
+        raise HTTPException(status_code=422, detail="Every evidence signal must exist")
+    bundle = [
+        {
+            "signal_id": str(signal.id),
+            "source_label": signal.source_label,
+            "source_uri": signal.source_uri,
+            "original_material": signal.original_material,
+            "observation": signal.observation,
+        }
+        for signal in signals
+    ]
+    run = AgentRun(
+        objective_id=objective_id,
+        boundary_id=boundary.id,
+        boundary_version=boundary.version,
+        idempotency_key=body.idempotency_key,
+        task_instruction=body.task_instruction,
+        evidence_bundle=bundle,
+        evidence_bundle_hash=_bundle_hash(bundle),
+        model_version=body.model_version,
+        prompt_version=body.prompt_version,
+        budgets={
+            "max_tool_calls": body.max_tool_calls,
+            "max_tokens": body.max_tokens,
+            "max_cost_cents": body.max_cost_cents,
+        },
+        tool_allowlist=boundary.tool_allowlist,
         tool_audit=[],
         usage={"tool_calls": 0, "tokens": 0, "cost_cents": 0},
         errors=[],

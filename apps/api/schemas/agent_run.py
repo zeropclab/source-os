@@ -20,6 +20,9 @@ class AgentRunCreate(BaseModel):
 class AgentRunResponse(BaseModel):
     id: uuid.UUID
     idempotency_key: str
+    objective_id: uuid.UUID | None
+    boundary_id: uuid.UUID | None
+    boundary_version: int | None
     task_instruction: str
     evidence_bundle: list[dict]
     evidence_bundle_hash: str
