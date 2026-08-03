@@ -80,7 +80,9 @@ async def test_approval_request_pauses_objective_until_operator_decides(client, 
 
 async def test_approving_request_versions_boundary_and_restores_active_objective(client, db):
     source = await create_source(db)
-    second_source = await create_source(db, name="Second Source", url="https://example.com/second.xml")
+    second_source = await create_source(
+        db, name="Second Source", url="https://example.com/second.xml"
+    )
     created = await client.post("/api/discovery-objectives", json=objective_payload(source.id))
     objective_id = created.json()["id"]
     approval = await client.post(
