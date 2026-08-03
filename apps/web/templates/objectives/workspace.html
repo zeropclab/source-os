@@ -112,7 +112,10 @@
         );
         renderList(
             '#acquisition-plans',
-            workspace.plans.map((plan) => `v${plan.version}: ${plan.question}`),
+            workspace.plans.map((plan) => {
+                const runCount = Object.values(plan.mission_runs).flat().length;
+                return `v${plan.version}: ${plan.question} · ${plan.missions.length} missions / ${runCount} runs`;
+            }),
         );
         renderList(
             '#assessments',

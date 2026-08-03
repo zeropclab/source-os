@@ -119,6 +119,11 @@ async def test_linked_mission_must_keep_using_a_plan_allowed_by_current_boundary
             cost_budget_cents=0,
         ),
     )
+    queued = await client.post(
+        f"/api/acquisition-missions/{linked.json()['id']}/queued-runs",
+        json={"execution_mode": "fixture"},
+    )
+    workspace = await client.get(f"/api/discovery-objectives/{objective['id']}/workspace")
     approval = await client.post(
         f"/api/discovery-objectives/{objective['id']}/approvals",
         json={
@@ -142,5 +147,10 @@ async def test_linked_mission_must_keep_using_a_plan_allowed_by_current_boundary
     )
 
     assert linked.status_code == 201
+    assert queued.status_code == 201
     assert linked.json()["acquisition_plan_id"] == plan.json()["id"]
+    assert (
+        workspace.json()["plans"][0]["mission_runs"][linked.json()["id"]][0]["id"]
+        == queued.json()["id"]
+    )
     assert stale.status_code == 409

@@ -6,6 +6,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, StringConstraints
 
+from apps.api.schemas.acquisition_mission_run import AcquisitionMissionRunResponse
 from apps.api.schemas.agent_run import AgentRunResponse
 
 NonEmptyText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
@@ -168,6 +169,7 @@ class AcquisitionPlanResponse(BaseModel):
     predecessor_plan_id: uuid.UUID | None
     revision: PlanRevisionResponse | None
     missions: list[uuid.UUID]
+    mission_runs: dict[uuid.UUID, list[AcquisitionMissionRunResponse]] = Field(default_factory=dict)
 
 
 class DiscoveryAssessmentCreate(BaseModel):

@@ -27,6 +27,11 @@ class AgentRun(Base):
         nullable=True,
     )
     boundary_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    acquisition_plan_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("acquisition_plans.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
     input_context: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     task_instruction: Mapped[str] = mapped_column(Text, nullable=False)
     evidence_bundle: Mapped[list[dict]] = mapped_column(JSONB, nullable=False)

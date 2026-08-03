@@ -1,5 +1,6 @@
 """Run deterministic proposal agents against an immutable evidence bundle."""
 
+import asyncio
 import hashlib
 import json
 import uuid
@@ -13,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api.dependencies import get_db
 from apps.api.schemas.agent_run import AgentRunCreate, AgentRunOperatorDecision, AgentRunResponse
 from apps.api.services.pi_runtime import PiRuntimeError, run_pi_proposal
+from packages.storage.models.acquisition_plan import AcquisitionPlan
 from packages.storage.models.agent_run import AgentRun
 from packages.storage.models.discovery_objective import (
     ApprovedCollectionBoundary,
@@ -26,7 +28,10 @@ _TOOL_ALLOWLIST: list[str] = []
 
 
 def _objective_input_context(
-    objective: DiscoveryObjective, boundary: ApprovedCollectionBoundary
+    objective: DiscoveryObjective,
+    boundary: ApprovedCollectionBoundary,
+    plan: AcquisitionPlan | None,
+    proposal_type: str,
 ) -> dict:
     """Freeze the read-only Objective and Boundary the Agent was allowed to see."""
     return {
@@ -50,6 +55,21 @@ def _objective_input_context(
             "credential_scope": boundary.credential_scope,
             "evidence_conditions": boundary.evidence_conditions,
         },
+        "plan": (
+            {
+                "id": str(plan.id),
+                "version": plan.version,
+                "question": plan.question,
+                "selected_source_ids": plan.selected_source_ids,
+                "counterevidence_target": plan.counterevidence_target,
+                "request_budget": plan.request_budget,
+                "time_budget_minutes": plan.time_budget_minutes,
+                "cost_budget_cents": plan.cost_budget_cents,
+            }
+            if plan is not None
+            else None
+        ),
+        "proposal_type": proposal_type,
     }
 
 
@@ -114,6 +134,37 @@ def _structured_assessment_proposal(runtime_output: dict, evidence_ids: list[str
     }
 
 
+def _structured_plan_revision_proposal(runtime_output: dict, plan: dict) -> dict:
+    """A malformed plan recommendation never becomes a runnable Plan Revision."""
+    fallback = {
+        "contract": "acquisition_plan_revision_proposal.v1",
+        "predecessor_plan_id": plan["id"],
+        "proposed_delta": {},
+        "reason": "Pi output cannot support a Plan Revision proposal yet.",
+        "coverage_gaps": ["Pi output did not satisfy the plan revision contract."],
+        "status": "unknown",
+    }
+    try:
+        raw = json.loads(str(runtime_output.get("raw_output", "")))
+    except json.JSONDecodeError:
+        return fallback
+    if (
+        not isinstance(raw, dict)
+        or not isinstance(raw.get("proposed_delta"), dict)
+        or not isinstance(raw.get("reason"), str)
+        or not raw["reason"].strip()
+    ):
+        return fallback
+    return {
+        "contract": "acquisition_plan_revision_proposal.v1",
+        "predecessor_plan_id": plan["id"],
+        "proposed_delta": raw["proposed_delta"],
+        "reason": raw["reason"].strip(),
+        "coverage_gaps": raw.get("coverage_gaps", []),
+        "status": "proposed",
+    }
+
+
 @router.get("/{run_id}", response_model=AgentRunResponse)
 async def get_agent_run(run_id: uuid.UUID, db: Annotated[AsyncSession, Depends(get_db)]):
     return await _run_or_404(db, run_id)
@@ -125,6 +176,11 @@ async def create_agent_run(
     response: Response,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
+    if body.acquisition_plan_id is not None or body.proposal_type == "plan_revision":
+        raise HTTPException(
+            status_code=422,
+            detail="A plan-bound Agent Run must use a Discovery Objective endpoint",
+        )
     existing = await db.scalar(
         select(AgentRun).where(AgentRun.idempotency_key == body.idempotency_key)
     )
@@ -160,6 +216,7 @@ async def create_agent_run(
             "max_tool_calls": body.max_tool_calls,
             "max_tokens": body.max_tokens,
             "max_cost_cents": body.max_cost_cents,
+            "max_time_minutes": body.max_time_minutes,
         },
         tool_allowlist=_TOOL_ALLOWLIST,
         tool_audit=[],
@@ -198,6 +255,7 @@ async def create_objective_agent_run(
     if (
         body.max_tool_calls > boundary.request_limit
         or body.max_cost_cents > boundary.cost_budget_cents
+        or body.max_time_minutes > boundary.time_budget_minutes
     ):
         raise HTTPException(status_code=422, detail="Agent budget is outside the approved boundary")
     existing = await db.scalar(
@@ -206,6 +264,21 @@ async def create_objective_agent_run(
     if existing is not None:
         response.status_code = 200
         return existing
+    plan = None
+    if body.acquisition_plan_id is not None:
+        plan = await db.scalar(
+            select(AcquisitionPlan).where(AcquisitionPlan.id == body.acquisition_plan_id)
+        )
+        if plan is None or plan.objective_id != objective_id or plan.boundary_id != boundary.id:
+            raise HTTPException(
+                status_code=422,
+                detail="Agent Run plan is outside this Objective's current boundary",
+            )
+    elif body.proposal_type == "plan_revision":
+        raise HTTPException(
+            status_code=422,
+            detail="A plan revision proposal requires an Acquisition Plan",
+        )
     signals = list(
         await db.scalars(
             select(ExternalSignal).where(ExternalSignal.id.in_(body.evidence_signal_ids))
@@ -223,11 +296,12 @@ async def create_objective_agent_run(
         }
         for signal in signals
     ]
-    input_context = _objective_input_context(objective, boundary)
+    input_context = _objective_input_context(objective, boundary, plan, body.proposal_type)
     run = AgentRun(
         objective_id=objective_id,
         boundary_id=boundary.id,
         boundary_version=boundary.version,
+        acquisition_plan_id=plan.id if plan is not None else None,
         input_context=input_context,
         idempotency_key=body.idempotency_key,
         task_instruction=body.task_instruction,
@@ -239,6 +313,7 @@ async def create_objective_agent_run(
             "max_tool_calls": body.max_tool_calls,
             "max_tokens": body.max_tokens,
             "max_cost_cents": body.max_cost_cents,
+            "max_time_minutes": body.max_time_minutes,
         },
         tool_allowlist=boundary.tool_allowlist,
         tool_audit=[],
@@ -279,23 +354,31 @@ async def execute_agent_run(run_id: uuid.UUID, db: Annotated[AsyncSession, Depen
                 detail="Discovery Agent run boundary is no longer active",
             )
     try:
-        runtime_output = await run_pi_proposal(
-            run_id=str(run.id),
-            task_instruction=run.task_instruction,
-            evidence_bundle_hash=run.evidence_bundle_hash,
-            evidence_bundle=(
-                [*run.evidence_bundle, {"kind": "objective_context", "snapshot": run.input_context}]
-                if run.input_context is not None
-                else run.evidence_bundle
-            ),
-            model_version=run.model_version,
-            budgets=run.budgets,
-        )
+        async with asyncio.timeout(run.budgets.get("max_time_minutes", 1) * 60):
+            runtime_output = await run_pi_proposal(
+                run_id=str(run.id),
+                task_instruction=run.task_instruction,
+                evidence_bundle_hash=run.evidence_bundle_hash,
+                evidence_bundle=(
+                    [
+                        *run.evidence_bundle,
+                        {"kind": "objective_context", "snapshot": run.input_context},
+                    ]
+                    if run.input_context is not None
+                    else run.evidence_bundle
+                ),
+                model_version=run.model_version,
+                budgets=run.budgets,
+            )
         runtime_usage = runtime_output.pop("usage", {})
         if run.objective_id is not None:
-            runtime_output["proposal"] = _structured_assessment_proposal(
-                runtime_output,
-                [entry["signal_id"] for entry in run.evidence_bundle],
+            runtime_output["proposal"] = (
+                _structured_plan_revision_proposal(runtime_output, run.input_context["plan"])
+                if run.input_context.get("proposal_type") == "plan_revision"
+                else _structured_assessment_proposal(
+                    runtime_output,
+                    [entry["signal_id"] for entry in run.evidence_bundle],
+                )
             )
         run.output = runtime_output
         run.tool_audit = [
@@ -307,7 +390,7 @@ async def execute_agent_run(run_id: uuid.UUID, db: Annotated[AsyncSession, Depen
             "cost_cents": runtime_usage.get("cost_cents", 0),
         }
         run.status = "completed"
-    except PiRuntimeError as error:
+    except (PiRuntimeError, TimeoutError) as error:
         run.errors = [*run.errors, {"stage": "runtime", "error": str(error)}]
         run.status = "failed"
     run.completed_at = datetime.now(UTC)

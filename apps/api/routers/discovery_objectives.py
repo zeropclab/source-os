@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 
 from apps.api.dependencies import get_db
 from apps.api.routers.need_issues import create_need_issue_from_accepted_signal
+from apps.api.schemas.acquisition_mission_run import AcquisitionMissionRunResponse
 from apps.api.schemas.agent_run import AgentRunResponse
 from apps.api.schemas.discovery_objective import (
     AcquisitionPlanCreate,
@@ -38,6 +39,7 @@ from apps.api.schemas.discovery_objective import (
     PlanRevisionResponse,
 )
 from apps.api.schemas.need_issue import NeedIssueFromAcceptedSignalCreate
+from packages.storage.models.acquisition_mission_run import AcquisitionMissionRun
 from packages.storage.models.acquisition_plan import AcquisitionPlan, PlanRevision
 from packages.storage.models.agent_run import AgentRun
 from packages.storage.models.discovery_assessment import DiscoveryAssessment, NeedHypothesis
@@ -111,6 +113,25 @@ async def _plan_response(db: AsyncSession, plan: AcquisitionPlan) -> Acquisition
     boundary = await db.scalar(
         select(ApprovedCollectionBoundary).where(ApprovedCollectionBoundary.id == plan.boundary_id)
     )
+    mission_ids = [mission.id for mission in plan.missions]
+    runs = (
+        list(
+            (
+                await db.scalars(
+                    select(AcquisitionMissionRun)
+                    .where(AcquisitionMissionRun.mission_id.in_(mission_ids))
+                    .order_by(AcquisitionMissionRun.started_at.desc())
+                )
+            ).all()
+        )
+        if mission_ids
+        else []
+    )
+    mission_runs: dict[uuid.UUID, list[AcquisitionMissionRunResponse]] = {
+        mission_id: [] for mission_id in mission_ids
+    }
+    for run in runs:
+        mission_runs[run.mission_id].append(AcquisitionMissionRunResponse.model_validate(run))
     return AcquisitionPlanResponse(
         id=plan.id,
         objective_id=plan.objective_id,
@@ -136,7 +157,8 @@ async def _plan_response(db: AsyncSession, plan: AcquisitionPlan) -> Acquisition
             if revision
             else None
         ),
-        missions=[mission.id for mission in plan.missions],
+        missions=mission_ids,
+        mission_runs=mission_runs,
     )
 
 
