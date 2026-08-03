@@ -73,7 +73,7 @@ class DiscoveryObjectiveWorkspaceResponse(BaseModel):
     objective: DiscoveryObjectiveResponse
     current_boundary: ApprovedCollectionBoundaryResponse
     plans: list["AcquisitionPlanResponse"] = Field(default_factory=list)
-    assessments: list[object] = Field(default_factory=list)
+    assessments: list["DiscoveryAssessmentResponse"] = Field(default_factory=list)
     pending_approvals: list["OperatorApprovalResponse"] = Field(default_factory=list)
     boundary_revisions: list["OperatorBoundaryRevisionResponse"] = Field(default_factory=list)
 
@@ -162,3 +162,49 @@ class AcquisitionPlanResponse(BaseModel):
     predecessor_plan_id: uuid.UUID | None
     revision: PlanRevisionResponse | None
     missions: list[uuid.UUID]
+
+
+class DiscoveryAssessmentCreate(BaseModel):
+    kind: str = Field(
+        pattern="^(support|counterevidence|unknown|coverage_gap|blocked|recommendation)$"
+    )
+    statement: NonEmptyText
+    evidence_ids: list[uuid.UUID] = Field(default_factory=list)
+    assessment_ids: list[uuid.UUID] = Field(default_factory=list)
+    unknowns: list[NonEmptyText] = Field(default_factory=list)
+    coverage_gaps: list[NonEmptyText] = Field(default_factory=list)
+    recommendation: NonEmptyText | None = None
+
+
+class DiscoveryAssessmentResponse(DiscoveryAssessmentCreate):
+    id: uuid.UUID
+    objective_id: uuid.UUID
+    version: int
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class NeedHypothesisCreate(BaseModel):
+    title: NonEmptyText = Field(max_length=255)
+    target_actor: NonEmptyText
+    context: NonEmptyText
+    problem: NonEmptyText
+    desired_outcome: NonEmptyText
+    workaround: NonEmptyText | None = None
+    unknowns: list[NonEmptyText] = Field(default_factory=list)
+    next_validation_action: NonEmptyText
+    support_assessment_ids: list[uuid.UUID] = Field(min_length=1)
+
+
+class NeedHypothesisResponse(NeedHypothesisCreate):
+    id: uuid.UUID
+    objective_id: uuid.UUID
+    status: str
+    promoted_need_issue_id: uuid.UUID | None
+    created_at: datetime
+    model_config = {"from_attributes": True}
+
+
+class NeedHypothesisPromotion(BaseModel):
+    operator: NonEmptyText

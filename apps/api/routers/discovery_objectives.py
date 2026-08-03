@@ -10,14 +10,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from apps.api.dependencies import get_db
+from apps.api.routers.need_issues import create_need_issue_from_accepted_signal
 from apps.api.schemas.discovery_objective import (
     AcquisitionPlanCreate,
     AcquisitionPlanResponse,
     ApprovedCollectionBoundaryResponse,
     BoundaryPatch,
+    DiscoveryAssessmentCreate,
+    DiscoveryAssessmentResponse,
     DiscoveryObjectiveCreate,
     DiscoveryObjectiveResponse,
     DiscoveryObjectiveWorkspaceResponse,
+    NeedHypothesisCreate,
+    NeedHypothesisPromotion,
+    NeedHypothesisResponse,
     ObjectiveBlockRequest,
     OperatorApprovalCreate,
     OperatorApprovalDecision,
@@ -26,13 +32,16 @@ from apps.api.schemas.discovery_objective import (
     OperatorBoundaryRevisionResponse,
     PlanRevisionResponse,
 )
+from apps.api.schemas.need_issue import NeedIssueFromAcceptedSignalCreate
 from packages.storage.models.acquisition_plan import AcquisitionPlan, PlanRevision
+from packages.storage.models.discovery_assessment import DiscoveryAssessment, NeedHypothesis
 from packages.storage.models.discovery_objective import (
     ApprovedCollectionBoundary,
     DiscoveryObjective,
     OperatorApproval,
     OperatorBoundaryRevision,
 )
+from packages.storage.models.external_signal import ExternalSignal
 from packages.storage.models.source import Source
 
 router = APIRouter()
@@ -238,6 +247,15 @@ async def get_discovery_objective_workspace(
         objective=response,
         current_boundary=response.current_boundary,
         plans=[await _plan_response(db, plan) for plan in plans],
+        assessments=list(
+            (
+                await db.scalars(
+                    select(DiscoveryAssessment)
+                    .where(DiscoveryAssessment.objective_id == objective_id)
+                    .order_by(DiscoveryAssessment.version.desc())
+                )
+            ).all()
+        ),
         pending_approvals=list(
             (
                 await db.scalars(
@@ -265,6 +283,137 @@ async def get_discovery_objective_workspace(
             ).all()
         ],
     )
+
+
+@router.post(
+    "/{objective_id}/assessments", response_model=DiscoveryAssessmentResponse, status_code=201
+)
+async def create_discovery_assessment(
+    objective_id: uuid.UUID,
+    body: DiscoveryAssessmentCreate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    if not body.evidence_ids and not body.assessment_ids:
+        raise HTTPException(
+            status_code=422, detail="Assessment requires evidence or upstream assessment citations"
+        )
+    objective = await db.scalar(
+        select(DiscoveryObjective).where(DiscoveryObjective.id == objective_id)
+    )
+    if objective is None:
+        raise HTTPException(status_code=404, detail="Discovery Objective not found")
+    evidence_ids = set(body.evidence_ids)
+    if evidence_ids and len(
+        (
+            await db.scalars(select(ExternalSignal.id).where(ExternalSignal.id.in_(evidence_ids)))
+        ).all()
+    ) != len(evidence_ids):
+        raise HTTPException(
+            status_code=422, detail="Assessment cites an unknown evidence candidate"
+        )
+    version = (
+        await db.scalar(
+            select(func.max(DiscoveryAssessment.version)).where(
+                DiscoveryAssessment.objective_id == objective_id
+            )
+        )
+        or 0
+    ) + 1
+    assessment = DiscoveryAssessment(
+        objective_id=objective_id, version=version, **body.model_dump(mode="json")
+    )
+    db.add(assessment)
+    await db.commit()
+    return assessment
+
+
+@router.post(
+    "/{objective_id}/need-hypotheses", response_model=NeedHypothesisResponse, status_code=201
+)
+async def create_need_hypothesis(
+    objective_id: uuid.UUID,
+    body: NeedHypothesisCreate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    assessments = list(
+        (
+            await db.scalars(
+                select(DiscoveryAssessment).where(
+                    DiscoveryAssessment.id.in_(body.support_assessment_ids),
+                    DiscoveryAssessment.objective_id == objective_id,
+                )
+            )
+        ).all()
+    )
+    if len(assessments) != len(body.support_assessment_ids) or not all(
+        a.kind == "support" and (a.evidence_ids or a.assessment_ids) for a in assessments
+    ):
+        raise HTTPException(
+            status_code=422, detail="Need Hypothesis requires cited support assessments"
+        )
+    hypothesis = NeedHypothesis(objective_id=objective_id, **body.model_dump(mode="json"))
+    db.add(hypothesis)
+    await db.commit()
+    return hypothesis
+
+
+@router.post("/{objective_id}/need-hypotheses/{hypothesis_id}/promote", status_code=201)
+async def promote_need_hypothesis(
+    objective_id: uuid.UUID,
+    hypothesis_id: uuid.UUID,
+    body: NeedHypothesisPromotion,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    hypothesis = await db.scalar(
+        select(NeedHypothesis).where(
+            NeedHypothesis.id == hypothesis_id, NeedHypothesis.objective_id == objective_id
+        )
+    )
+    if hypothesis is None:
+        raise HTTPException(status_code=404, detail="Need Hypothesis not found")
+    if hypothesis.status != "draft":
+        raise HTTPException(status_code=409, detail="Need Hypothesis is not promotable")
+    assessments = list(
+        (
+            await db.scalars(
+                select(DiscoveryAssessment).where(
+                    DiscoveryAssessment.id.in_(
+                        [uuid.UUID(value) for value in hypothesis.support_assessment_ids]
+                    )
+                )
+            )
+        ).all()
+    )
+    signal_ids = [
+        uuid.UUID(value) for assessment in assessments for value in assessment.evidence_ids
+    ]
+    signal = await db.scalar(
+        select(ExternalSignal).where(
+            ExternalSignal.id.in_(signal_ids), ExternalSignal.status == "accepted"
+        )
+    )
+    if signal is None:
+        raise HTTPException(
+            status_code=422, detail="Promotion requires an accepted evidence candidate"
+        )
+    need = await create_need_issue_from_accepted_signal(
+        NeedIssueFromAcceptedSignalCreate(
+            external_signal_id=signal.id,
+            title=hypothesis.title,
+            target_actor=hypothesis.target_actor,
+            context=hypothesis.context,
+            problem=hypothesis.problem,
+            desired_outcome=hypothesis.desired_outcome,
+            workaround=hypothesis.workaround,
+            unknowns=hypothesis.unknowns,
+            next_validation_action=hypothesis.next_validation_action,
+        ),
+        db,
+    )
+    hypothesis.status = "promoted"
+    hypothesis.promoted_need_issue_id = need.id
+    await db.commit()
+    return need
 
 
 @router.post("/{objective_id}/plans", response_model=AcquisitionPlanResponse, status_code=201)
