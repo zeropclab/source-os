@@ -185,6 +185,11 @@ async def create_agent_run(
         select(AgentRun).where(AgentRun.idempotency_key == body.idempotency_key)
     )
     if existing is not None:
+        if existing.objective_id is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="Agent Run idempotency key belongs to a Discovery Objective",
+            )
         response.status_code = 200
         return existing
     signals = list(
@@ -262,6 +267,11 @@ async def create_objective_agent_run(
         select(AgentRun).where(AgentRun.idempotency_key == body.idempotency_key)
     )
     if existing is not None:
+        if existing.objective_id != objective_id:
+            raise HTTPException(
+                status_code=409,
+                detail="Agent Run idempotency key belongs to another Objective",
+            )
         response.status_code = 200
         return existing
     plan = None

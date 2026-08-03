@@ -176,3 +176,38 @@ async def test_plan_bound_agent_run_can_only_return_a_structured_revision_propos
         "coverage_gaps": ["Pi output did not satisfy the plan revision contract."],
         "status": "unknown",
     }
+
+
+async def test_agent_run_idempotency_key_cannot_cross_discovery_objective_boundary(client, db):
+    source = await create_source(db)
+    first = await client.post("/api/discovery-objectives", json=objective_payload(source.id))
+    second = await client.post("/api/discovery-objectives", json=objective_payload(source.id))
+    signal = await client.post(
+        "/api/external-signals",
+        json={
+            "source_label": "Public discussion",
+            "original_material": "I reconcile reports each Friday.",
+            "observed_at": datetime.now(UTC).isoformat(),
+            "observation": "A manual workaround is reported.",
+        },
+    )
+    payload = {
+        "evidence_signal_ids": [signal.json()["id"]],
+        "task_instruction": "Return a structured assessment proposal only.",
+        "idempotency_key": "shared-key-across-objectives",
+        "model_version": "pi-faux-v1",
+        "prompt_version": "discovery-assessment-v1",
+        "max_tool_calls": 1,
+        "max_tokens": 500,
+        "max_cost_cents": 0,
+    }
+    created = await client.post(
+        f"/api/discovery-objectives/{first.json()['id']}/agent-runs", json=payload
+    )
+    conflict = await client.post(
+        f"/api/discovery-objectives/{second.json()['id']}/agent-runs", json=payload
+    )
+
+    assert created.status_code == 201
+    assert conflict.status_code == 409
+    assert conflict.json()["detail"] == "Agent Run idempotency key belongs to another Objective"
