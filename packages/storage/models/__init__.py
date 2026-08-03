@@ -22,6 +22,7 @@ from .need_issue import (
     OutcomeDecision,
     ProductThesis,
     ProductThesisObservation,
+    ValidationExecutionTask,
     ValidationExperiment,
 )
 from .source import Source
@@ -52,6 +53,7 @@ __all__ = [
     "NeedChallenge",
     "OntologyHypothesis",
     "ValidationExperiment",
+    "ValidationExecutionTask",
     "MarketObservation",
     "NeedIssueVersion",
     "NeedIssueStatusEvent",

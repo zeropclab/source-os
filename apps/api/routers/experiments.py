@@ -1,11 +1,13 @@
 """Operator-approved, reality-facing validation experiments."""
 
 import uuid
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from apps.api.dependencies import get_db
 from apps.api.schemas.need_issue import (
@@ -13,16 +15,26 @@ from apps.api.schemas.need_issue import (
     ExperimentDecision,
     MarketObservationCreate,
     MarketObservationResponse,
+    ValidationExecutionTaskCreate,
+    ValidationExecutionTaskResponse,
     ValidationExperimentListResponse,
     ValidationExperimentResponse,
 )
-from packages.storage.models.need_issue import MarketObservation, ValidationExperiment
+from packages.storage.models.need_issue import (
+    MarketObservation,
+    ValidationExecutionTask,
+    ValidationExperiment,
+)
 
 router = APIRouter()
 
 
 async def _experiment_or_404(db: AsyncSession, experiment_id: uuid.UUID) -> ValidationExperiment:
-    experiment = await db.get(ValidationExperiment, experiment_id)
+    experiment = await db.scalar(
+        select(ValidationExperiment)
+        .options(selectinload(ValidationExperiment.execution_tasks))
+        .where(ValidationExperiment.id == experiment_id)
+    )
     if experiment is None:
         raise HTTPException(status_code=404, detail="Validation experiment not found")
     return experiment
@@ -35,7 +47,7 @@ async def list_validation_experiments(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ):
-    query = select(ValidationExperiment)
+    query = select(ValidationExperiment).options(selectinload(ValidationExperiment.execution_tasks))
     count_query = select(func.count(ValidationExperiment.id))
     if status is not None:
         query = query.where(ValidationExperiment.status == status)
@@ -54,6 +66,55 @@ async def list_validation_experiments(
 @router.get("/{experiment_id}", response_model=ValidationExperimentResponse)
 async def get_experiment(experiment_id: uuid.UUID, db: Annotated[AsyncSession, Depends(get_db)]):
     return await _experiment_or_404(db, experiment_id)
+
+
+@router.post(
+    "/{experiment_id}/execution-tasks",
+    response_model=ValidationExecutionTaskResponse,
+    status_code=201,
+)
+async def create_execution_task(
+    experiment_id: uuid.UUID,
+    body: ValidationExecutionTaskCreate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    experiment = await _experiment_or_404(db, experiment_id)
+    if experiment.status not in {"draft", "approved"}:
+        raise HTTPException(
+            status_code=409, detail="Execution tasks can only be planned before contact work"
+        )
+    task = ValidationExecutionTask(experiment_id=experiment.id, **body.model_dump())
+    db.add(task)
+    await db.commit()
+    await db.refresh(task)
+    return task
+
+
+@router.post(
+    "/{experiment_id}/execution-tasks/{task_id}/mark-contacted",
+    response_model=ValidationExecutionTaskResponse,
+)
+async def mark_execution_task_contacted(
+    experiment_id: uuid.UUID,
+    task_id: uuid.UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    experiment = await _experiment_or_404(db, experiment_id)
+    if experiment.status != "running":
+        raise HTTPException(
+            status_code=409,
+            detail="External contact requires operator approval and a running experiment",
+        )
+    task = await db.get(ValidationExecutionTask, task_id)
+    if task is None or task.experiment_id != experiment.id:
+        raise HTTPException(status_code=404, detail="Validation execution task not found")
+    if task.status != "planned":
+        raise HTTPException(status_code=409, detail="Only a planned task can be marked contacted")
+    task.status = "contacted"
+    task.contacted_at = datetime.now(UTC)
+    await db.commit()
+    await db.refresh(task)
+    return task
 
 
 @router.post("/{experiment_id}/approve", response_model=ValidationExperimentResponse)

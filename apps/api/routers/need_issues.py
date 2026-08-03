@@ -310,7 +310,7 @@ async def create_validation_experiment(
     experiment = ValidationExperiment(need_issue_id=need_issue.id, **body.model_dump())
     db.add(experiment)
     await db.commit()
-    await db.refresh(experiment)
+    await db.refresh(experiment, attribute_names=["execution_tasks"])
     return experiment
 
 
