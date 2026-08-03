@@ -18,6 +18,8 @@ async def test_objective_workspace_page_loads_the_durable_workspace_contract(cli
     assert "approveApproval" in page
     assert 'id="decision-record-panel"' in page
     assert 'id="mission-console-link" href="/missions"' in page
+    assert 'id="mission-console-region"' in page
+    assert 'src="/missions"' in page
     assert 'id="strongest-counterevidence"' in page
     assert 'id="assessment-unknowns"' in page
     assert "plan.revision" in page
