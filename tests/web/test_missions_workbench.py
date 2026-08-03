@@ -6,6 +6,11 @@ async def test_missions_workbench_exposes_an_explicit_bounded_mission_flow(clien
 
     assert response.status_code == 200
     page = response.text
+    assert 'class="app-sidebar"' in page
+    assert 'id="collection-layout"' in page
+    assert 'id="source-panel"' in page
+    assert 'id="mission-editor"' in page
+    assert 'id="operation-rail"' in page
     assert 'id="mission-form"' in page
     assert 'id="source-id"' in page
     assert 'id="source-config-form"' in page
