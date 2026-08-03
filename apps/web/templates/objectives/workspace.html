@@ -32,6 +32,11 @@
         <ul id="boundary-revisions"></ul>
     </article>
 
+    <article>
+        <header><strong>采集计划</strong></header>
+        <ul id="acquisition-plans"></ul>
+    </article>
+
     <p id="objective-error" hidden></p>
 </section>
 <script>
@@ -70,6 +75,10 @@
         renderList(
             '#boundary-revisions',
             workspace.boundary_revisions.map((revision) => `v${revision.boundary_version}: ${revision.reason}`),
+        );
+        renderList(
+            '#acquisition-plans',
+            workspace.plans.map((plan) => `v${plan.version}: ${plan.question}`),
         );
     }
     loadObjectiveWorkspace().catch((error) => {

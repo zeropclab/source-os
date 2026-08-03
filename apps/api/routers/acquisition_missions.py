@@ -15,6 +15,11 @@ from apps.api.schemas.acquisition_mission import (
     AcquisitionMissionResponse,
 )
 from packages.storage.models.acquisition_mission import AcquisitionMission
+from packages.storage.models.acquisition_plan import AcquisitionPlan
+from packages.storage.models.discovery_objective import (
+    ApprovedCollectionBoundary,
+    DiscoveryObjective,
+)
 from packages.storage.models.source_config_version import SourceConfigVersion
 
 router = APIRouter()
@@ -54,6 +59,29 @@ async def create_acquisition_mission(
                 f"{config.access_mode}"
             ),
         )
+
+    if body.acquisition_plan_id is not None:
+        plan = await db.scalar(
+            select(AcquisitionPlan).where(AcquisitionPlan.id == body.acquisition_plan_id)
+        )
+        if plan is None or str(body.source_id) not in plan.selected_source_ids:
+            raise HTTPException(
+                status_code=422,
+                detail="Mission source is not selected by the plan",
+            )
+        objective = await db.scalar(
+            select(DiscoveryObjective).where(DiscoveryObjective.id == plan.objective_id)
+        )
+        current_boundary = await db.scalar(
+            select(ApprovedCollectionBoundary)
+            .where(ApprovedCollectionBoundary.objective_id == plan.objective_id)
+            .order_by(ApprovedCollectionBoundary.version.desc())
+        )
+        if objective.status != "active" or plan.boundary_id != current_boundary.id:
+            raise HTTPException(
+                status_code=409,
+                detail="Plan is no longer permitted by the current approved boundary",
+            )
 
     mission = AcquisitionMission(
         **body.model_dump(),

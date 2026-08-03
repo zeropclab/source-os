@@ -5,12 +5,14 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from apps.api.dependencies import get_db
 from apps.api.schemas.discovery_objective import (
+    AcquisitionPlanCreate,
+    AcquisitionPlanResponse,
     ApprovedCollectionBoundaryResponse,
     BoundaryPatch,
     DiscoveryObjectiveCreate,
@@ -22,7 +24,9 @@ from apps.api.schemas.discovery_objective import (
     OperatorApprovalResponse,
     OperatorBoundaryRevisionCreate,
     OperatorBoundaryRevisionResponse,
+    PlanRevisionResponse,
 )
+from packages.storage.models.acquisition_plan import AcquisitionPlan, PlanRevision
 from packages.storage.models.discovery_objective import (
     ApprovedCollectionBoundary,
     DiscoveryObjective,
@@ -39,6 +43,14 @@ def _objective_with_boundaries(objective_id: uuid.UUID):
         select(DiscoveryObjective)
         .options(selectinload(DiscoveryObjective.boundaries))
         .where(DiscoveryObjective.id == objective_id)
+    )
+
+
+def _plan_with_missions(plan_id: uuid.UUID):
+    return (
+        select(AcquisitionPlan)
+        .options(selectinload(AcquisitionPlan.missions))
+        .where(AcquisitionPlan.id == plan_id)
     )
 
 
@@ -75,6 +87,40 @@ def _revision_response(
         reason=revision.reason,
         boundary_patch=revision.boundary_patch,
         created_at=revision.created_at,
+    )
+
+
+async def _plan_response(db: AsyncSession, plan: AcquisitionPlan) -> AcquisitionPlanResponse:
+    revision = await db.scalar(select(PlanRevision).where(PlanRevision.plan_id == plan.id))
+    boundary = await db.scalar(
+        select(ApprovedCollectionBoundary).where(ApprovedCollectionBoundary.id == plan.boundary_id)
+    )
+    return AcquisitionPlanResponse(
+        id=plan.id,
+        objective_id=plan.objective_id,
+        boundary_id=plan.boundary_id,
+        boundary_version=boundary.version,
+        version=plan.version,
+        question=plan.question,
+        selected_source_ids=plan.selected_source_ids,
+        counterevidence_target=plan.counterevidence_target,
+        request_budget=plan.request_budget,
+        time_budget_minutes=plan.time_budget_minutes,
+        cost_budget_cents=plan.cost_budget_cents,
+        created_at=plan.created_at,
+        predecessor_plan_id=revision.predecessor_plan_id if revision else None,
+        revision=(
+            PlanRevisionResponse(
+                id=revision.id,
+                predecessor_plan_id=revision.predecessor_plan_id,
+                reason=revision.reason,
+                delta=revision.delta,
+                created_at=revision.created_at,
+            )
+            if revision
+            else None
+        ),
+        missions=[mission.id for mission in plan.missions],
     )
 
 
@@ -178,9 +224,20 @@ async def get_discovery_objective_workspace(
     if objective is None:
         raise HTTPException(status_code=404, detail="Discovery Objective not found")
     response = _response_for(objective)
+    plans = list(
+        (
+            await db.scalars(
+                select(AcquisitionPlan)
+                .options(selectinload(AcquisitionPlan.missions))
+                .where(AcquisitionPlan.objective_id == objective_id)
+                .order_by(AcquisitionPlan.version.desc())
+            )
+        ).all()
+    )
     return DiscoveryObjectiveWorkspaceResponse(
         objective=response,
         current_boundary=response.current_boundary,
+        plans=[await _plan_response(db, plan) for plan in plans],
         pending_approvals=list(
             (
                 await db.scalars(
@@ -208,6 +265,77 @@ async def get_discovery_objective_workspace(
             ).all()
         ],
     )
+
+
+@router.post("/{objective_id}/plans", response_model=AcquisitionPlanResponse, status_code=201)
+async def create_acquisition_plan(
+    objective_id: uuid.UUID,
+    body: AcquisitionPlanCreate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    objective = await db.scalar(_objective_with_boundaries(objective_id))
+    if objective is None:
+        raise HTTPException(status_code=404, detail="Discovery Objective not found")
+    if objective.status != "active":
+        raise HTTPException(status_code=409, detail="Only an active objective can create a plan")
+
+    current_boundary = objective.boundaries[-1]
+    selected_source_ids = {str(source_id) for source_id in body.selected_source_ids}
+    if len(selected_source_ids) != len(body.selected_source_ids):
+        raise HTTPException(status_code=422, detail="Plan source IDs must not repeat")
+    if not selected_source_ids.issubset(set(current_boundary.approved_source_ids)):
+        raise HTTPException(
+            status_code=422,
+            detail="Plan sources are outside the approved boundary",
+        )
+    if (
+        body.request_budget > current_boundary.request_limit
+        or body.time_budget_minutes > current_boundary.time_budget_minutes
+        or body.cost_budget_cents > current_boundary.cost_budget_cents
+    ):
+        raise HTTPException(status_code=422, detail="Plan budget is outside the approved boundary")
+
+    latest_version = await db.scalar(
+        select(func.max(AcquisitionPlan.version)).where(
+            AcquisitionPlan.objective_id == objective_id
+        )
+    )
+    if body.predecessor_plan_id is not None:
+        predecessor = await db.scalar(_plan_with_missions(body.predecessor_plan_id))
+        if predecessor is None or predecessor.objective_id != objective_id:
+            raise HTTPException(
+                status_code=422,
+                detail="Plan predecessor does not belong to this objective",
+            )
+        if not body.revision_reason or body.revision_delta is None:
+            raise HTTPException(status_code=422, detail="Plan revision requires a reason and delta")
+    elif body.revision_reason or body.revision_delta is not None:
+        raise HTTPException(status_code=422, detail="Initial plan cannot include a revision record")
+
+    plan = AcquisitionPlan(
+        objective_id=objective_id,
+        boundary_id=current_boundary.id,
+        version=(latest_version or 0) + 1,
+        question=body.question,
+        selected_source_ids=[str(source_id) for source_id in body.selected_source_ids],
+        counterevidence_target=body.counterevidence_target,
+        request_budget=body.request_budget,
+        time_budget_minutes=body.time_budget_minutes,
+        cost_budget_cents=body.cost_budget_cents,
+    )
+    db.add(plan)
+    await db.flush()
+    if body.predecessor_plan_id is not None:
+        revision = PlanRevision(
+            plan_id=plan.id,
+            predecessor_plan_id=body.predecessor_plan_id,
+            reason=body.revision_reason,
+            delta=body.revision_delta,
+        )
+        db.add(revision)
+    await db.commit()
+    saved = await db.scalar(_plan_with_missions(plan.id))
+    return await _plan_response(db, saved)
 
 
 @router.post("/{objective_id}/approvals", response_model=OperatorApprovalResponse, status_code=201)

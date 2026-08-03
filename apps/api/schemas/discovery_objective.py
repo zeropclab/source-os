@@ -72,7 +72,7 @@ class DiscoveryObjectiveResponse(BaseModel):
 class DiscoveryObjectiveWorkspaceResponse(BaseModel):
     objective: DiscoveryObjectiveResponse
     current_boundary: ApprovedCollectionBoundaryResponse
-    plans: list[object] = Field(default_factory=list)
+    plans: list["AcquisitionPlanResponse"] = Field(default_factory=list)
     assessments: list[object] = Field(default_factory=list)
     pending_approvals: list["OperatorApprovalResponse"] = Field(default_factory=list)
     boundary_revisions: list["OperatorBoundaryRevisionResponse"] = Field(default_factory=list)
@@ -124,3 +124,41 @@ class OperatorBoundaryRevisionResponse(BaseModel):
 
 class ObjectiveBlockRequest(BaseModel):
     reason: NonEmptyText
+
+
+class AcquisitionPlanCreate(BaseModel):
+    question: NonEmptyText
+    selected_source_ids: list[uuid.UUID] = Field(min_length=1)
+    counterevidence_target: NonEmptyText
+    request_budget: int = Field(gt=0)
+    time_budget_minutes: int = Field(gt=0)
+    cost_budget_cents: int = Field(ge=0)
+    predecessor_plan_id: uuid.UUID | None = None
+    revision_reason: NonEmptyText | None = None
+    revision_delta: dict | None = None
+
+
+class PlanRevisionResponse(BaseModel):
+    id: uuid.UUID
+    predecessor_plan_id: uuid.UUID
+    reason: str
+    delta: dict
+    created_at: datetime
+
+
+class AcquisitionPlanResponse(BaseModel):
+    id: uuid.UUID
+    objective_id: uuid.UUID
+    boundary_id: uuid.UUID
+    boundary_version: int
+    version: int
+    question: str
+    selected_source_ids: list[uuid.UUID]
+    counterevidence_target: str
+    request_budget: int
+    time_budget_minutes: int
+    cost_budget_cents: int
+    created_at: datetime
+    predecessor_plan_id: uuid.UUID | None
+    revision: PlanRevisionResponse | None
+    missions: list[uuid.UUID]

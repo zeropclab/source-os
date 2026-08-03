@@ -1,6 +1,7 @@
 from .acquisition_mission import AcquisitionMission
 from .acquisition_mission_run import AcquisitionMissionRun
 from .acquisition_mission_run_signal import AcquisitionMissionRunSignal
+from .acquisition_plan import AcquisitionPlan, PlanRevision
 from .agent_run import AgentRun
 from .comment import Comment
 from .content_version import ContentVersion
@@ -45,6 +46,8 @@ __all__ = [
     "SourceConfigProposal",
     "SourceProbeRun",
     "AcquisitionMission",
+    "AcquisitionPlan",
+    "PlanRevision",
     "AcquisitionMissionRun",
     "AcquisitionMissionRunSignal",
     "AgentRun",

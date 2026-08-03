@@ -48,6 +48,11 @@ class AcquisitionMission(Base):
         UUID(as_uuid=True),
         nullable=True,
     )
+    acquisition_plan_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("acquisition_plans.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
     reality_question: Mapped[str] = mapped_column(Text, nullable=False)
     mission_type: Mapped[str] = mapped_column(String(32), nullable=False)
     regions: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
@@ -67,3 +72,4 @@ class AcquisitionMission(Base):
     )
 
     source_config_version = relationship("SourceConfigVersion", lazy="raise")
+    acquisition_plan = relationship("AcquisitionPlan", back_populates="missions", lazy="raise")
