@@ -24,7 +24,33 @@
         </div>
     </article>
 
+    <article id="assessments-panel">
+        <header><strong>Evidence-cited Assessment</strong></header>
+        <p>这是智能体或操作员基于证据的判断，不是已验证的市场需求。</p>
+        <ul id="assessments"></ul>
+        <p>Need Hypothesis（仅草稿）</p>
+        <ul id="need-hypotheses"></ul>
+    </article>
+
     <article>
+        <header><strong>采集计划</strong></header>
+        <ul id="acquisition-plans"></ul>
+        <p><a id="mission-console-link" href="/missions">进入采集控制台执行已批准计划 →</a></p>
+    </article>
+
+    <article id="agent-runs-panel">
+        <header><strong>受控 Discovery Agent 运行</strong></header>
+        <p>每次运行绑定当时的目标、边界、证据包和预算；边界变化后不得继续执行。</p>
+        <ul id="agent-runs"></ul>
+    </article>
+
+    <article id="evidence-panel">
+        <header><strong>证据包</strong></header>
+        <p>候选证据不是需求结论，必须回看原始材料与上下文。</p>
+        <ul id="workspace-evidence"></ul>
+    </article>
+
+    <article id="approval-panel">
         <header><strong>操作员审批与边界修订</strong></header>
         <p>待批准请求</p>
         <ul id="pending-approvals"></ul>
@@ -36,11 +62,6 @@
             <label>新增请求上限<input name="request_limit" type="number" min="1" required></label>
             <button>以新边界恢复目标</button>
         </form>
-    </article>
-
-    <article>
-        <header><strong>采集计划</strong></header>
-        <ul id="acquisition-plans"></ul>
     </article>
 
     <article id="decision-record-panel" hidden>
@@ -92,6 +113,22 @@
         renderList(
             '#acquisition-plans',
             workspace.plans.map((plan) => `v${plan.version}: ${plan.question}`),
+        );
+        renderList(
+            '#assessments',
+            workspace.assessments.map((assessment) => `${assessment.kind}: ${assessment.statement}`),
+        );
+        renderList(
+            '#need-hypotheses',
+            workspace.need_hypotheses.map((hypothesis) => `${hypothesis.status}: ${hypothesis.title}`),
+        );
+        renderList(
+            '#agent-runs',
+            workspace.agent_runs.map((run) => `${run.status}: ${run.prompt_version} · boundary v${run.boundary_version}`),
+        );
+        renderList(
+            '#workspace-evidence',
+            workspace.evidence_bundle.map((evidence) => `${evidence.source_label}: ${evidence.observation}`),
         );
         const decisionPanel = document.querySelector('#decision-record-panel');
         decisionPanel.hidden = workspace.decision_record === null;

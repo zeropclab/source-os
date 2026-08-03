@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 
 from apps.api.dependencies import get_db
 from apps.api.routers.need_issues import create_need_issue_from_accepted_signal
+from apps.api.schemas.agent_run import AgentRunResponse
 from apps.api.schemas.discovery_objective import (
     AcquisitionPlanCreate,
     AcquisitionPlanResponse,
@@ -38,6 +39,7 @@ from apps.api.schemas.discovery_objective import (
 )
 from apps.api.schemas.need_issue import NeedIssueFromAcceptedSignalCreate
 from packages.storage.models.acquisition_plan import AcquisitionPlan, PlanRevision
+from packages.storage.models.agent_run import AgentRun
 from packages.storage.models.discovery_assessment import DiscoveryAssessment, NeedHypothesis
 from packages.storage.models.discovery_decision import DiscoveryDecisionRecord, OutcomeFeedback
 from packages.storage.models.discovery_objective import (
@@ -277,6 +279,21 @@ async def get_discovery_objective_workspace(
     decision_record = await db.scalar(
         select(DiscoveryDecisionRecord).where(DiscoveryDecisionRecord.objective_id == objective_id)
     )
+    agent_runs = list(
+        (
+            await db.scalars(
+                select(AgentRun)
+                .where(AgentRun.objective_id == objective_id)
+                .order_by(AgentRun.created_at.desc())
+            )
+        ).all()
+    )
+    evidence_by_id = {
+        evidence["signal_id"]: evidence
+        for run in agent_runs
+        for evidence in run.evidence_bundle
+        if "signal_id" in evidence
+    }
     return DiscoveryObjectiveWorkspaceResponse(
         objective=response,
         current_boundary=response.current_boundary,
@@ -316,6 +333,17 @@ async def get_discovery_objective_workspace(
                 )
             ).all()
         ],
+        agent_runs=[AgentRunResponse.model_validate(run) for run in agent_runs],
+        evidence_bundle=list(evidence_by_id.values()),
+        need_hypotheses=list(
+            (
+                await db.scalars(
+                    select(NeedHypothesis)
+                    .where(NeedHypothesis.objective_id == objective_id)
+                    .order_by(NeedHypothesis.created_at.desc())
+                )
+            ).all()
+        ),
         decision_record=(
             await _decision_record_response(db, decision_record)
             if decision_record is not None

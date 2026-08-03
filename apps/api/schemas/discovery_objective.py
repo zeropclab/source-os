@@ -6,6 +6,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, StringConstraints
 
+from apps.api.schemas.agent_run import AgentRunResponse
+
 NonEmptyText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
 
@@ -76,6 +78,9 @@ class DiscoveryObjectiveWorkspaceResponse(BaseModel):
     assessments: list["DiscoveryAssessmentResponse"] = Field(default_factory=list)
     pending_approvals: list["OperatorApprovalResponse"] = Field(default_factory=list)
     boundary_revisions: list["OperatorBoundaryRevisionResponse"] = Field(default_factory=list)
+    agent_runs: list[AgentRunResponse] = Field(default_factory=list)
+    evidence_bundle: list[dict] = Field(default_factory=list)
+    need_hypotheses: list["NeedHypothesisResponse"] = Field(default_factory=list)
     decision_record: "DiscoveryDecisionRecordResponse | None" = None
 
 
