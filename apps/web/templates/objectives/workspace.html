@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block title %}Discovery Objective{% endblock %}
+{% block breadcrumb %}需求挑战 / <strong>发现目标</strong>{% endblock %}
+
+{% block content %}
+<section id="objective-workspace" data-objective-id="{{ objective_id }}">
+    <p class="eyebrow">DISCOVERY OBJECTIVE</p>
+    <h1 id="objective-title">正在加载发现目标…</h1>
+    <p id="objective-question"></p>
+    <p id="objective-status" role="status"></p>
+
+    <article>
+        <header><strong>Approved collection boundary</strong><small id="boundary-version"></small></header>
+        <dl id="boundary-details"></dl>
+    </article>
+
+    <article>
+        <header><strong>停止条件</strong></header>
+        <div class="grid">
+            <section><small>资源</small><ul id="resource-stop-conditions"></ul></section>
+            <section><small>证据</small><ul id="evidence-stop-conditions"></ul></section>
+            <section><small>决策</small><ul id="decision-stop-conditions"></ul></section>
+        </div>
+    </article>
+
+    <p id="objective-error" hidden></p>
+</section>
+<script>
+    const objectiveId = document.querySelector('#objective-workspace').dataset.objectiveId;
+    const renderList = (selector, values) => {
+        document.querySelector(selector).replaceChildren(...values.map((value) => {
+            const item = document.createElement('li'); item.textContent = value; return item;
+        }));
+    };
+    async function loadObjectiveWorkspace() {
+        const response = await fetch(`/api/discovery-objectives/${objectiveId}/workspace`);
+        if (!response.ok) throw new Error('Discovery Objective could not be loaded');
+        const workspace = await response.json();
+        const { objective, current_boundary: boundary } = workspace;
+        document.querySelector('#objective-title').textContent = objective.title;
+        document.querySelector('#objective-question').textContent = objective.question;
+        document.querySelector('#objective-status').textContent = `状态：${objective.status}`;
+        document.querySelector('#boundary-version').textContent = `v${boundary.version}`;
+        document.querySelector('#boundary-details').innerHTML = '';
+        for (const [label, value] of Object.entries({
+            '来源': boundary.approved_source_ids.join(', '), '工具': boundary.tool_allowlist.join(', '),
+            '请求上限': boundary.request_limit, '时间预算（分钟）': boundary.time_budget_minutes,
+            '成本预算（分）': boundary.cost_budget_cents,
+        })) {
+            const term = document.createElement('dt'); term.textContent = label;
+            const definition = document.createElement('dd'); definition.textContent = value;
+            document.querySelector('#boundary-details').append(term, definition);
+        }
+        renderList('#resource-stop-conditions', objective.resource_stop_conditions);
+        renderList('#evidence-stop-conditions', objective.evidence_stop_conditions);
+        renderList('#decision-stop-conditions', objective.decision_stop_conditions);
+    }
+    loadObjectiveWorkspace().catch((error) => {
+        const target = document.querySelector('#objective-error'); target.hidden = false; target.textContent = error.message;
+    });
+</script>
+{% endblock %}

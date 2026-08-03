@@ -10,6 +10,7 @@ from .routers import (
     jobs,
     missions,
     needs,
+    objectives,
     observations,
     ontology,
     portfolio,
@@ -22,6 +23,7 @@ web_app.include_router(dashboard.router)
 web_app.include_router(experiments.router)
 web_app.include_router(web_sources.router)
 web_app.include_router(missions.router)
+web_app.include_router(objectives.router)
 web_app.include_router(observations.router)
 web_app.include_router(agents.router)
 web_app.include_router(ontology.router)

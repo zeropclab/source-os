@@ -15,6 +15,7 @@ from .routers import (
     acquisition_missions,
     agent_runs,
     delivery_records,
+    discovery_objectives,
     experiments,
     export,
     external_signals,
@@ -100,6 +101,11 @@ app.include_router(
     feature_outcomes.router, prefix="/api/feature-outcomes", tags=["Feature Outcomes"]
 )
 app.include_router(today.router, prefix="/api/today", tags=["Today"])
+app.include_router(
+    discovery_objectives.router,
+    prefix="/api/discovery-objectives",
+    tags=["Discovery Objectives"],
+)
 app.include_router(
     ontology_hypotheses.router, prefix="/api/ontology-hypotheses", tags=["Ontology Hypotheses"]
 )
