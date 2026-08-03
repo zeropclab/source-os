@@ -42,17 +42,21 @@ async def test_missions_workbench_exposes_an_explicit_bounded_mission_flow(clien
     assert "Lease" in page
 
 
-async def test_dashboard_prioritizes_reality_action_and_objection_over_volume_metrics(client):
+async def test_dashboard_prioritizes_collection_workbench_over_validation_tasks(client):
     response = await client.get("/")
 
     assert response.status_code == 200
     page = response.text
-    assert 'id="today-workspace"' in page
-    assert "/api/today" in page
-    assert "Strongest objection" in page
-    assert "Next reality action" in page
-    assert "Record an observation" in page
-    assert "Plan a bounded mission" in page
+    assert 'id="collection-workbench"' in page
+    assert "Open collection workbench" in page
+    assert "Define a source" in page
+    assert "Review collected evidence" in page
+    assert "/missions" in page
+    assert "/sources/create" in page
+    assert "/api/evidence-inbox" in page
+    assert "/api/today" not in page
+    assert "Strongest objection" not in page
+    assert "Next reality action" not in page
     assert "Success Rate (24h)" not in page
     assert "Items Collected" not in page
 

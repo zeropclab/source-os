@@ -1,51 +1,57 @@
 {% extends "base.html" %}
-{% block title %}Dashboard{% endblock %}
+{% block title %}采集工作台{% endblock %}
 
 {% block content %}
-<p class="eyebrow">Personal evidence operations</p>
-<h1>Reality Workbench</h1>
-<p>先处理现实观察、最强异议和最小下一步；来源、条目和运行数量只在需要排障时展开，不能替代需求判断。</p>
+<p class="eyebrow">需求挖掘 · 最小可用闭环</p>
+<h1>采集工作台</h1>
+<p>从定义信源开始，采集公开内容，保留原文上下文，再把值得研究的内容送入需求分析。这里不替你联系任何人，也不把评论当作已被验证的需求。</p>
 
-<article id="today-workspace">
-    <header><strong>Today: reality-facing work</strong></header>
-    <p>Loading the current evidence, objection, and smallest next action…</p>
+<section id="collection-workbench" class="workbench-grid">
+    <article>
+        <header><strong>1. 定义信源</strong></header>
+        <p>添加一个你要持续关注的平台、社区或内容入口，并配置采集频率与边界。</p>
+        <a href="/sources/create" role="button">Define a source</a>
+    </article>
+    <article>
+        <header><strong>2. 配置并执行采集</strong></header>
+        <p>为选定信源固定采集配置，先预览，再由你决定是否执行有限范围的公开采集。</p>
+        <a href="/missions" role="button" class="secondary">Open collection workbench</a>
+    </article>
+    <article>
+        <header><strong>3. 审阅证据候选</strong></header>
+        <p>只有带原文与上下文的内容才能进入需求判断；接受、忽略或标记待查都保留理由。</p>
+        <a href="/missions#evidence-inbox" role="button" class="secondary outline">Review collected evidence</a>
+    </article>
+</section>
+
+<article id="recent-evidence">
+    <header><strong>最近采集到的证据候选</strong></header>
+    <p>Loading…</p>
 </article>
 
-<h2>Start from reality</h2>
-<div class="grid">
-    <a href="/observations" role="button">Record an observation</a>
-    <a href="/missions" role="button" class="secondary">Plan a bounded mission</a>
-    <a href="/sources" role="button" class="secondary outline">Review sources and configuration</a>
-</div>
-
 <article>
-    <header><strong>What this workbench does not claim</strong></header>
-    <p>A collected comment, an Agent proposal, an ontology relationship, or a finished Feature is not proof of demand, payment, retention, or profit. Each must remain traceable to observations, counterevidence, and a next reality action.</p>
+    <header><strong>这一步的完成标准</strong></header>
+    <p>你能独立完成一次：创建信源 → 固定配置 → 预览或执行采集 → 查看原始上下文 → 做出证据处置。需求假设与产品定义在此之后再进入下一步。</p>
 </article>
 
 <script>
-async function loadTodayWorkspace() {
-    const container = document.getElementById('today-workspace');
+const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+
+async function loadRecentEvidence() {
+    const target = document.getElementById('recent-evidence');
     try {
-        const response = await fetch('/api/today');
-        const today = await response.json();
-        const activeNeed = today.active_need
-            ? `<a href="/needs/${encodeURIComponent(today.active_need.id)}">${today.active_need.title}</a>`
-            : 'No active Need Issue';
-        container.innerHTML = `<header><strong>Today: reality-facing work</strong></header>
-            <p><strong>Next reality action:</strong> ${today.next_reality_action}</p>
-            <p><strong>Strongest objection:</strong> ${today.strongest_objection}</p>
-            <p><strong>Active Need:</strong> ${activeNeed}</p>
-            <p><strong>Active validation:</strong> ${today.active_validation
-                ? `${today.active_validation.status} · ${today.active_validation.stop_condition}`
-                : 'None'}</p>
-            <p><strong>WIP:</strong> validations ${today.wip.validations.active}/${today.wip.validations.limit}; builds ${today.wip.builds_or_paid_pilots.active}/${today.wip.builds_or_paid_pilots.limit}</p>
-            <small>Recorded outcomes: ${today.recorded_outcomes}. Counts do not establish success.</small>`;
+        const response = await fetch('/api/evidence-inbox?page=1&page_size=3');
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || 'Could not load evidence inbox.');
+        const items = data.items || [];
+        target.innerHTML = `<header><strong>最近采集到的证据候选</strong></header>${items.length
+            ? `<div class="evidence-list">${items.map((item) => `<p><strong>${escapeHtml(item.source_label)}</strong> · ${escapeHtml(item.status)}<br><small>${escapeHtml(item.observation)}</small></p>`).join('')}</div><a href="/missions#evidence-inbox">打开完整证据收件箱</a>`
+            : '<p>尚无候选证据。先定义一个信源并执行一次小范围采集。</p>'}`;
     } catch (error) {
-        container.innerHTML = '<p class="failure-detail">Could not load today workspace.</p>';
+        target.innerHTML = '<p class="failure-detail">暂时无法读取证据收件箱。</p>';
     }
 }
 
-loadTodayWorkspace();
+loadRecentEvidence();
 </script>
 {% endblock %}
