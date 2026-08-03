@@ -27,6 +27,7 @@ class AgentRun(Base):
         nullable=True,
     )
     boundary_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    input_context: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     task_instruction: Mapped[str] = mapped_column(Text, nullable=False)
     evidence_bundle: Mapped[list[dict]] = mapped_column(JSONB, nullable=False)
     evidence_bundle_hash: Mapped[str] = mapped_column(String(64), nullable=False)

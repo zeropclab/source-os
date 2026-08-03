@@ -14,12 +14,43 @@ from apps.api.dependencies import get_db
 from apps.api.schemas.agent_run import AgentRunCreate, AgentRunOperatorDecision, AgentRunResponse
 from apps.api.services.pi_runtime import PiRuntimeError, run_pi_proposal
 from packages.storage.models.agent_run import AgentRun
-from packages.storage.models.discovery_objective import DiscoveryObjective
+from packages.storage.models.discovery_objective import (
+    ApprovedCollectionBoundary,
+    DiscoveryObjective,
+)
 from packages.storage.models.external_signal import ExternalSignal
 
 router = APIRouter()
 objective_router = APIRouter()
 _TOOL_ALLOWLIST: list[str] = []
+
+
+def _objective_input_context(
+    objective: DiscoveryObjective, boundary: ApprovedCollectionBoundary
+) -> dict:
+    """Freeze the read-only Objective and Boundary the Agent was allowed to see."""
+    return {
+        "objective": {
+            "id": str(objective.id),
+            "title": objective.title,
+            "question": objective.question,
+            "status": objective.status,
+            "resource_stop_conditions": objective.resource_stop_conditions,
+            "evidence_stop_conditions": objective.evidence_stop_conditions,
+            "decision_stop_conditions": objective.decision_stop_conditions,
+        },
+        "boundary": {
+            "id": str(boundary.id),
+            "version": boundary.version,
+            "approved_source_ids": boundary.approved_source_ids,
+            "tool_allowlist": boundary.tool_allowlist,
+            "request_limit": boundary.request_limit,
+            "time_budget_minutes": boundary.time_budget_minutes,
+            "cost_budget_cents": boundary.cost_budget_cents,
+            "credential_scope": boundary.credential_scope,
+            "evidence_conditions": boundary.evidence_conditions,
+        },
+    }
 
 
 async def _run_or_404(db: AsyncSession, run_id: uuid.UUID) -> AgentRun:
@@ -29,9 +60,58 @@ async def _run_or_404(db: AsyncSession, run_id: uuid.UUID) -> AgentRun:
     return run
 
 
-def _bundle_hash(bundle: list[dict]) -> str:
+def _bundle_hash(bundle: object) -> str:
     encoded = json.dumps(bundle, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode()).hexdigest()
+
+
+def _structured_assessment_proposal(runtime_output: dict, evidence_ids: list[str]) -> dict:
+    """Expose a stable proposal contract; malformed model text becomes an explicit unknown."""
+    fallback = {
+        "contract": "discovery_assessment_proposal.v1",
+        "kind": "unknown",
+        "statement": "The Agent output cannot support an assessment proposal yet.",
+        "evidence_ids": evidence_ids,
+        "assessment_ids": [],
+        "unknowns": ["Pi output did not satisfy the assessment proposal contract."],
+        "coverage_gaps": [],
+        "recommendation": "Review the cited evidence or run a bounded next acquisition plan.",
+        "status": "unknown",
+    }
+    try:
+        raw = json.loads(str(runtime_output.get("raw_output", "")))
+    except json.JSONDecodeError:
+        return fallback
+    allowed_kinds = {
+        "support",
+        "counterevidence",
+        "unknown",
+        "coverage_gap",
+        "blocked",
+        "recommendation",
+    }
+    if (
+        not isinstance(raw, dict)
+        or raw.get("kind") not in allowed_kinds
+        or not isinstance(raw.get("statement"), str)
+        or not raw["statement"].strip()
+        or not isinstance(raw.get("unknowns", []), list)
+    ):
+        return fallback
+    cited_ids = raw.get("evidence_ids", evidence_ids)
+    if not isinstance(cited_ids, list) or set(cited_ids) - set(evidence_ids):
+        return fallback
+    return {
+        "contract": "discovery_assessment_proposal.v1",
+        "kind": raw["kind"],
+        "statement": raw["statement"].strip(),
+        "evidence_ids": cited_ids,
+        "assessment_ids": [],
+        "unknowns": raw.get("unknowns", []),
+        "coverage_gaps": raw.get("coverage_gaps", []),
+        "recommendation": raw.get("recommendation"),
+        "status": "proposed",
+    }
 
 
 @router.get("/{run_id}", response_model=AgentRunResponse)
@@ -110,8 +190,6 @@ async def create_objective_agent_run(
         raise HTTPException(
             status_code=409, detail="Only an active objective can run the Discovery Agent"
         )
-    from packages.storage.models.discovery_objective import ApprovedCollectionBoundary
-
     boundary = await db.scalar(
         select(ApprovedCollectionBoundary)
         .where(ApprovedCollectionBoundary.objective_id == objective_id)
@@ -145,14 +223,16 @@ async def create_objective_agent_run(
         }
         for signal in signals
     ]
+    input_context = _objective_input_context(objective, boundary)
     run = AgentRun(
         objective_id=objective_id,
         boundary_id=boundary.id,
         boundary_version=boundary.version,
+        input_context=input_context,
         idempotency_key=body.idempotency_key,
         task_instruction=body.task_instruction,
         evidence_bundle=bundle,
-        evidence_bundle_hash=_bundle_hash(bundle),
+        evidence_bundle_hash=_bundle_hash({"input_context": input_context, "evidence": bundle}),
         model_version=body.model_version,
         prompt_version=body.prompt_version,
         budgets={
@@ -180,16 +260,43 @@ async def execute_agent_run(run_id: uuid.UUID, db: Annotated[AsyncSession, Depen
         raise HTTPException(status_code=409, detail="Cancelled Agent Run cannot execute")
     if run.status == "completed":
         return run
+    if run.objective_id is not None:
+        objective = await db.get(DiscoveryObjective, run.objective_id)
+        current_boundary = await db.scalar(
+            select(ApprovedCollectionBoundary)
+            .where(ApprovedCollectionBoundary.objective_id == run.objective_id)
+            .order_by(ApprovedCollectionBoundary.version.desc())
+        )
+        if (
+            objective is None
+            or objective.status != "active"
+            or current_boundary is None
+            or current_boundary.id != run.boundary_id
+            or current_boundary.version != run.boundary_version
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="Discovery Agent run boundary is no longer active",
+            )
     try:
         runtime_output = await run_pi_proposal(
             run_id=str(run.id),
             task_instruction=run.task_instruction,
             evidence_bundle_hash=run.evidence_bundle_hash,
-            evidence_bundle=run.evidence_bundle,
+            evidence_bundle=(
+                [*run.evidence_bundle, {"kind": "objective_context", "snapshot": run.input_context}]
+                if run.input_context is not None
+                else run.evidence_bundle
+            ),
             model_version=run.model_version,
             budgets=run.budgets,
         )
         runtime_usage = runtime_output.pop("usage", {})
+        if run.objective_id is not None:
+            runtime_output["proposal"] = _structured_assessment_proposal(
+                runtime_output,
+                [entry["signal_id"] for entry in run.evidence_bundle],
+            )
         run.output = runtime_output
         run.tool_audit = [
             {"tool": "Pi Agent", "status": "completed", "policy": "no executable tools"}

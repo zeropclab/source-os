@@ -23,6 +23,7 @@ class AgentRunResponse(BaseModel):
     objective_id: uuid.UUID | None
     boundary_id: uuid.UUID | None
     boundary_version: int | None
+    input_context: dict | None
     task_instruction: str
     evidence_bundle: list[dict]
     evidence_bundle_hash: str
