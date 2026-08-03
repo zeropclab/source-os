@@ -8,10 +8,14 @@
         <h1>现实采集工作台</h1>
         <p>管理“为什么采、从哪里采、采到什么程度”，而不是启动一个黑箱爬虫。</p>
     </div>
-    <a href="/sources/create" role="button" class="secondary">导入材料</a>
+    <div class="head-actions"><a href="/sources/create" role="button" class="secondary">导入材料</a><button type="button" onclick="document.getElementById('mission-editor').scrollIntoView({behavior: 'smooth', block: 'start'}); document.getElementById('reality-question').focus();">＋ 新建采集任务</button></div>
 </header>
 
 <div id="workbench-message" role="status" aria-live="polite"></div>
+
+<nav class="collection-tabs" aria-label="采集工作台分区">
+    <button type="button" class="active">控制台</button><a href="/sources">采集源 <small>12</small></a><button type="button">采集任务 <small>5</small></button><button type="button">运行队列 <small>3</small></button><a href="#evidence-inbox">信号收件箱 <small>48</small></a><button type="button">上下文修复 <small>6</small></button><button type="button">质量审计</button>
+</nav>
 
 <article class="cold-water-notice"><strong>冷水提醒</strong><span>采集量不是证据强度。重复的同源评论不会自动变成独立需求。</span><a href="/portfolio">检查信源组合 →</a></article>
 
