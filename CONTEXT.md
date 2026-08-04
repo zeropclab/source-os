@@ -45,8 +45,20 @@ Observed tracking, delivery, retention, payment, refund, or support results from
 _Avoid_: Agent action, market proof by itself
 
 **Discovery Objective Workspace**:
-The operator interface for one Discovery Objective, presenting its stop conditions, current Assessment, plan revisions, bounded runs, evidence, and approval decisions. It is not a chat-first interface.
+The primary entry point and operator interface for one Discovery Objective. It presents its stop conditions, current Assessment, plan revisions, bounded runs, evidence, and approval decisions; the collection console is an operation area inside this flow, not a parallel top-level flow. It is not a chat-first interface.
 _Avoid_: dashboard, task board, agent chat
+
+**Legal Next Step**:
+The single state-aware action that the Workspace recommends from an Objective's current lifecycle state, boundary, evidence gap, and stop conditions. It may be expanded into advanced controls, but it never bypasses the Approved Collection Boundary or Operator Approval.
+_Avoid_: generic call to action, automatic escalation, workflow shortcut
+
+**Agent Proposal**:
+A structured, evidence-cited recommendation or bounded collection action produced by the Discovery Agent. It may execute only inside the current Approved Collection Boundary; changing the Objective, Boundary, commercial record, or closure state remains an Operator decision.
+_Avoid_: autonomous decision, silent background action, operator replacement
+
+**Operator Workbench Visual Baseline**:
+A desktop-first, high-information-density SourceOS operating surface: dark navigation, calm light work area, focused task/evidence/run columns, and prominent status, counterevidence, unknowns, and boundary risks. Visual polish serves judgment rather than decorative card feeds or mobile-first simplification.
+_Avoid_: consumer dashboard, card stream, telemetry theatre
 
 **Discovery Decision Record**:
 The closing record for a Discovery Objective, stating its decision state, cited support and counterevidence, resource use, unresolved unknowns, and later Outcome Feedback. It is the unit through which discovery quality is revisited.
