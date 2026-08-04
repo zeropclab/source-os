@@ -8,6 +8,22 @@ SourceOS is a personal operating system for turning traceable reality signals in
 The bounded actor that plans and performs approved public-source collection, then returns traceable evidence, counterevidence, unknowns, and a proposed next action. It never makes product, commercial, or external-contact decisions.
 _Avoid_: autonomous founder, full agent, chat assistant
 
+**Discovery Orchestrator**:
+The deterministic authority that evaluates a Discovery Objective's current facts, enforces lifecycle and Approved Collection Boundary rules, selects the Legal Next Step, records decisions, and delegates bounded cognitive work to the Discovery Agent or collection work to Acquisition. It does not invent evidence or business conclusions.
+_Avoid_: language model, autonomous founder, workflow script
+
+**Discovery Command**:
+An explicit request to change or advance a Discovery Objective, such as starting an approved Mission, accepting an Agent Proposal, revising a Boundary, or writing a Decision Record. A command expresses intent and may be rejected; it is never evidence that the requested result occurred.
+_Avoid_: fact, event, direct database update
+
+**Discovery Fact**:
+An immutable record of what actually occurred, such as a Run result, captured Evidence Candidate, Operator decision, or runtime failure. Facts are inputs to the Discovery Orchestrator's next evaluation and cannot be replaced by an Agent's intended action.
+_Avoid_: plan, command, model prediction
+
+**Agent-Native Product**:
+A product whose primary operating experience is a visible, continuing Discovery Agent loop around a Discovery Objective, while deterministic authority, evidence lineage, and Operator decisions remain explicit and auditable.
+_Avoid_: chatbot wrapper, model-owned database, autonomous black box
+
 **Operator Approval**:
 The explicit decision by the operator that permits an action outside the Discovery Agent's approved source, tool, or budget boundary.
 _Avoid_: confirmation, consent, automatic escalation
