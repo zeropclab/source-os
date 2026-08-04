@@ -64,9 +64,10 @@ dev = [
 [project.scripts]
 sourceos-api = "apps.api.main:main"
 sourceos-worker = "apps.worker.main:main"
+sourceos-prototype-legal-next-step = "prototypes.legal_next_step_throwaway.tui:main"
 
 [tool.setuptools.packages.find]
-include = ["apps*", "packages*"]
+include = ["apps*", "packages*", "prototypes*"]
 exclude = ["infra*", "tests*"]
 
 [tool.ruff]
