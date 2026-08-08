@@ -36,6 +36,9 @@ SourceOS 已经验证了 YouTube、Google Play、Discourse、GitHub 等来源的
 8. 任务、材料、经验和结论同时对 Agent 可检索、对人类可阅读，并能够写入 Obsidian。
 9. 长任务支持断点恢复、幂等执行、局部重试和故障路径切换。
 10. 系统能够从临场探索中形成站点能力，并在能力漂移时自主回退、修复和升级。
+11. 系统首次启动即内置丰富、版本化且可直接选用的采集对象目录，不要求用户从空清单开始。
+12. Agent 能够根据自然语言任务从内置目录选择种子目标，并自主发现、补充和维护新的目标。
+13. 用户和 Agent 均可通过 YAML、JSON、CSV、OPML、浏览器书签和纯 URL 清单导入或导出自定义采集对象。
 
 ### 2.2 非目标
 
@@ -87,8 +90,9 @@ monitoring_decision: 是否以及为何进入持续监控
 ```text
 用户自然语言需求
   -> SourceOS API 与任务控制面
-  -> Agent Runtime：定义、规划、评估、重规划
-  -> 任务调度与能力选择
+  -> LangGraph OSS Agent Runtime：定义、规划、评估、恢复与重规划
+  -> 默认采集目录、自定义 Target Pack 与能力选择
+  -> 任务调度
   -> 持久浏览器运行环境
      -> 浏览器扩展：页面、网络、媒体与交互感知
      -> Playwright：浏览器控制与状态恢复
@@ -377,6 +381,10 @@ Agent 根据变化速度自行调整频率。热门或突发对象进入 `accele
 - `MissionDefinitionRevision`：Agent 生成的任务契约版本；
 - `PlanRevision`：执行计划和修改原因；
 - `Target`：页面、账号、频道、视频、搜索或主题目标；
+- `SourceCatalogEntry`：平台、入口、访问方式和能力状态定义；
+- `TargetCatalogEntry`：可直接执行或实例化的内置采集对象；
+- `TargetPack` / `TargetPackVersion`：版本化的内置或自定义采集对象包；
+- `TargetListImport` / `TargetListExport`：清单导入、导出、校验和冲突报告；
 - `IdentityProfile`：Agent 数字身份和浏览器档案；
 - `PlatformAccount`：平台注册身份、权限和健康状态；
 - `Credential`：密码、Cookie、令牌、TOTP 和恢复信息；
@@ -446,6 +454,11 @@ monitoring: 已建立监控或明确判定无需监控
 - 监控增量能够并回完整快照，并由周期全量对账验证；
 - Agent 和 Worker 完全重启后能够恢复当前任务；
 - 报告中的每个证据引用都能返回真实材料。
+- 内置目录中目标 ID 唯一，软件升级后稳定 ID 和本地自定义包不被覆盖；
+- YAML 与 JSON 清单完成导出、重新导入和语义等价比较；
+- LangGraph checkpoint 恢复不会重复派发已存在的 RQ Job 或重复执行已完成的外部动作；
+- 删除 LangGraph checkpoint 后，SourceOS 中的任务、目标、证据和长期记忆仍然完整；
+- 禁用 Browser Use 后，所有已经适配的站点仍可通过 Playwright、扩展或确定性能力采集。
 
 ## 15. 建设顺序
 
@@ -469,6 +482,8 @@ monitoring: 已建立监控或明确判定无需监控
 ```
 
 该里程碑必须同时证明单页深采、跨站探索和持续监控，并支持持久浏览器、已有账号登录、任务记忆和中断恢复。
+
+里程碑一同时交付默认采集对象目录和清单导入导出闭环。Agent 必须能够从默认启用的核心种子包选择 Bilibili、YouTube 及其他相关目标，也必须能够导入一份用户 URL 清单、执行规范化去重、将其用于同一任务，并无损导出为 YAML 和 JSON。
 
 ### 15.2 里程碑二：身份完全自治
 
@@ -502,8 +517,244 @@ monitoring: 已建立监控或明确判定无需监控
 10. 增量结果能够并回完整快照，报告生成变化说明；
 11. 用户能够从报告判断跳回具体评论、弹幕时间点和转写时间点；
 12. 除无法自行获得的物理验证资源外，整个流程无需人工逐步操作。
+13. 系统已导入现有 203 项来源注册表，并能区分来源能力、采集对象和采集对象包；
+14. 至少 12 个内置 Target Pack、250 个内置目标模板和 40 个默认启用核心种子目标可被 Agent 检索；
+15. 默认启用目标覆盖至少 12 个平台、6 类信号和中英文两种语言环境；
+16. 一份包含 URL、频道、搜索、仓库和播放列表的自定义清单能够完成导入预检、规范化、去重、执行和导出回环；
+17. YAML 与 JSON 导出后重新导入，除运行状态和导出时明确排除的字段外，目标语义保持一致。
 
-## 17. 设计结论
+## 17. 默认内置采集对象目录
+
+### 17.1 三层目录模型
+
+系统必须区分三种对象，避免把“登记了很多站点”误认为“已经拥有丰富的可运行目标”：
+
+```text
+SourceCatalogEntry
+  平台及入口能力，例如 YouTube、Bilibili、GitHub Issues
+    -> TargetCatalogEntry
+       具体频道、账号、社区、仓库、应用、视频、播放列表或搜索模板
+         -> TargetPack
+            面向某类研究任务的版本化目标集合
+```
+
+现有 `source_registry.json` 中的 203 项来源全部迁移到 `SourceCatalogEntry`，保留访问状态、优先级、连接器和实现状态。它们是来源能力底座，不直接计入可执行采集对象数量。
+
+### 17.2 内置目标类型
+
+内置目录至少支持：
+
+- 具体页面或 URL；
+- 视频、分 P、剧集和播放列表；
+- 频道、创作者、账号或组织；
+- 评论线程、论坛社区和主题板块；
+- 搜索关键词、组合查询和趋势页；
+- GitHub / GitLab 仓库、Issue 和 Discussion；
+- 应用、插件、游戏、商品和评价页；
+- RSS、播客节目和音频专辑；
+- 产品发布、众筹、采购、资助和竞赛目录；
+- 本地文件、已有书签和 Obsidian 中保存的外部链接。
+
+每个条目至少包含：
+
+```yaml
+target_id: 稳定唯一标识
+kind: channel | account | video | playlist | community | query | repository | app | feed | url
+platform: 平台标识
+locator: 规范 URL、平台 ID 或查询定义
+title: 人类可读名称
+languages: 语言列表
+markets: 地区列表
+signal_types: 评论、弹幕、问题、评价、发布、采购等
+acquisition_policy:
+  comments: full
+  replies: full
+  danmaku: full_when_available
+  transcription: full_when_media
+monitor_policy: 默认监控策略
+capability_state: discovered | verified_executable | browser_explorable | registered_only | temporarily_broken | retired
+tags: 主题和用途标签
+provenance: 内置、用户导入或 Agent 发现
+```
+
+### 17.3 首发内置 Target Pack
+
+首发至少内置以下 12 个包：
+
+1. 中国视频与公开讨论：Bilibili、抖音、快手、西瓜视频等；
+2. 全球视频与直播：YouTube、TikTok、Twitch、Vimeo 等；
+3. 播客与长音频：小宇宙、Apple Podcasts、Spotify、RSS 播客等；
+4. 开发者问题与开源生态：GitHub、GitLab、Gitee、Hugging Face、npm、PyPI 等；
+5. 论坛与问答社区：Reddit、Hacker News、Discourse、V2EX、Stack Exchange、知乎等；
+6. 应用、插件与游戏评价：Google Play、Apple App Store、Chrome、VS Code、WordPress、Steam 等；
+7. 社交平台公开信号：X、微博、小红书、Bluesky、Mastodon 等；
+8. 产品发布与独立开发：Product Hunt、Show HN、Indie Hackers、BetaList 等；
+9. 众筹与预售验证：Kickstarter、Indiegogo、Makuake、Wadiz、摩点及区域众筹站；
+10. 商品、服务与软件评价：电商评价、G2、Capterra、Trustpilot、AlternativeTo 等；
+11. 采购、资助、外包与竞赛：SAM.gov、TED、UNGM、Grants.gov、Devpost、Kaggle 等；
+12. 论文、专利、标准与技术转移：arXiv、OpenAlex、Crossref、WIPO、USPTO、IETF 等。
+
+首发目录最低包含 250 个内置目标模板，其中至少 40 个组成默认启用的核心种子包，覆盖至少 12 个平台、6 类信号和中英文环境。默认启用表示 Agent 在任务规划时优先检索和选择，不表示系统启动后不加区分地立即采集全部目标。
+
+### 17.4 Agent 自主维护目录
+
+Agent 可以从任务执行中发现新频道、账号、社区、搜索词、播放列表和站点入口。新目标先进入 `discovered` 候选队列；完成规范化、重复检查和一次真实探活后，晋升为自定义 Target Pack 的正式成员。持续成功的高价值目标可以进入核心种子包的新版本，长期失效目标降级但保留历史引用。
+
+内置包只读并按版本升级。用户和 Agent 对内置包的修改通过“克隆为自定义包”完成，避免软件升级覆盖本地选择。
+
+## 18. 自定义清单导入与导出
+
+### 18.1 支持格式
+
+系统必须支持：
+
+- YAML：首选的可读、可版本控制完整格式；
+- JSON：无损机器交换格式；
+- CSV：适合表格编辑的扁平目标清单；
+- OPML：RSS 和播客订阅迁移；
+- Netscape Bookmark HTML：浏览器书签导入导出；
+- Markdown：提取链接、标题、标签和 Obsidian 上下文；
+- TXT：每行一个 URL、平台 ID 或搜索表达式；
+- ZIP Bundle：目标清单、JSON Schema、说明文档和可选运行状态的完整包。
+
+### 18.2 导入流程
+
+```text
+上传或指定文件
+  -> 格式识别与 Schema 校验
+  -> URL、平台 ID 和查询表达式规范化
+  -> 平台与目标类型识别
+  -> 内部重复和现有目录重复检查
+  -> 能力可用性与首次探活
+  -> 预览新增、更新、跳过和错误项
+  -> append | merge | replace 模式执行
+  -> 生成导入结果与失败原因
+```
+
+Agent 可在无人值守任务中自行导入清单并采用默认 `merge` 策略。无法识别的 URL 不丢弃，保存为通用 `url` 目标并交给浏览器探索。冲突默认以稳定目标 ID、平台原生 ID和规范 URL 判断；同一目标的用户字段优先，运行状态按最新成功记录合并。
+
+### 18.3 导出流程
+
+导出可以选择：
+
+- 单个目标、一个 Target Pack、当前任务目标或全部目录；
+- 只导出定义，或同时导出监控水位、能力状态和最近运行摘要；
+- 完整格式，或面向 CSV、OPML、书签的兼容子集；
+- 当前版本，或指定历史版本。
+
+目标清单只引用 `identity_profile_id` 或账号别名，不把密码、Cookie 和令牌混入目标交换文件。身份资源需要迁移时使用独立的身份资源导出流程，避免目标定义与运行环境绑定。
+
+### 18.4 版本与回环保证
+
+每个导出包包含 Schema 版本、目录版本、生成时间、条目数量、内容哈希和来源说明。YAML 与 JSON 必须满足导出后重新导入的语义回环：目标类型、定位符、采集策略、监控策略、标签和包关系保持一致。CSV、OPML、书签和 TXT 属于有损兼容格式，导出时明确列出无法表达的字段。
+
+导入导出同时提供 API、CLI 和界面入口。所有导入先产生预检报告，Agent 可以自行继续执行；人类也可以查看并修改预检结果。
+
+## 19. 开源 Agent 框架选型
+
+完整的一手资料对比见：[SourceOS 自治浏览器研究 Agent 开源框架选型调研](../../technical-design/2026-08-08-open-source-agent-framework-selection-research.md)。
+
+### 19.1 选型结论
+
+主编排框架采用：
+
+```text
+langgraph
+  + langgraph-checkpoint-postgres
+```
+
+浏览器执行层采用：
+
+```text
+Playwright + SourceOS 浏览器扩展 + 确定性站点能力
+  + Browser Use OSS（仅用于未知站点或能力漂移时的探索）
+```
+
+选择 LangGraph 的原因：
+
+1. LangGraph 明确面向长时间、有状态 Agent 的低层编排，支持持久化、故障恢复和 replay，适合 SourceOS 的数小时或数天任务。[LangGraph 官方概览](https://docs.langchain.com/oss/python/langgraph/overview)
+2. 官方提供 PostgreSQL checkpointer，可直接复用 SourceOS 现有 PostgreSQL，而不需要新增另一套耐久运行基础设施。[LangGraph checkpointer integrations](https://docs.langchain.com/oss/python/integrations/checkpointers/index)
+3. 子图适合表达规划、来源发现、浏览器探索、采集监督、质量复核、报告生成和监控等边界清晰的子能力。[LangGraph subgraphs](https://docs.langchain.com/oss/python/langgraph/use-subgraphs)
+4. LangGraph 是 MIT 许可并可脱离 LangChain 其他产品独立使用。[LangGraph 官方仓库](https://github.com/langchain-ai/langgraph)
+5. SourceOS 已使用 Python、FastAPI、PostgreSQL、Redis 和 RQ，LangGraph 可以只接管 Agent 编排游标，不要求重建业务控制面和 Worker 体系。
+
+### 19.2 框架边界
+
+LangGraph 只拥有：
+
+- 当前任务图运行位置；
+- 轻量计划状态；
+- 待处理目标 ID、Job ID 和证据缺口 ID；
+- 当前失败、恢复和重规划上下文；
+- graph schema 版本和 checkpoint。
+
+SourceOS 始终拥有：
+
+- 用户需求、任务契约和计划版本；
+- 默认目录、自定义清单、来源、目标和 Target Pack；
+- 评论、弹幕、媒体、字幕、逐字稿和原始材料；
+- 完整性账本和完成门槛；
+- 账号、邮箱、凭据引用和浏览器档案；
+- 站点能力、成功轨迹、版本和漂移状态；
+- 监控契约、游标、水位和运行历史；
+- 长期研究记忆、证据关系和 Obsidian 文档；
+- RQ 重任务、APScheduler 定时任务和本地文件库。
+
+全量评论、弹幕、HTML、媒体和逐字稿不得写入 LangGraph checkpoint。checkpoint 只保存 ID、摘要和编排游标；节点恢复时从 SourceOS 数据库读取最新业务事实。
+
+### 19.3 浏览器框架边界
+
+Browser Use 是可插拔的探索执行器，不是 SourceOS 的总 Agent 框架，也不负责判断采集是否完整。[Browser Use 官方仓库](https://github.com/browser-use/browser-use)
+
+执行优先级保持为：
+
+```text
+SourceOS 已验证站点能力
+  -> Playwright / 扩展确定性操作
+  -> Browser Use 未知站点探索
+  -> 把成功轨迹固化为新的 SourceOS 站点能力
+```
+
+禁用 Browser Use 后，所有已经适配的站点仍必须能够正常采集。更换浏览器探索库不得影响任务、证据、账号和长期记忆。
+
+### 19.4 其他框架的判定
+
+- **PydanticAI**：类型安全、模型中立并与 FastAPI 风格高度一致，但耐久执行需要 Temporal、DBOS、Prefect 或 Restate 等第二套运行时。首版继续用 Pydantic 定义业务和工具 Schema，不叠加第二套主 Agent loop。[PydanticAI 官方仓库](https://github.com/pydantic/pydantic-ai)
+- **Microsoft Agent Framework**：是 AutoGen 的官方继任者，MIT 许可，具备图工作流、checkpoint 和多 Agent 能力；但现阶段 Python 内置生产持久化与 SourceOS 的 PostgreSQL＋RQ 体系不如 LangGraph 直接匹配，列为重点观察的第二候选。[MAF 官方仓库](https://github.com/microsoft/agent-framework)
+- **AutoGen**：官方仓库已标记为维护模式并建议新项目使用 Microsoft Agent Framework，因此不作为新系统基础。[AutoGen 官方仓库](https://github.com/microsoft/autogen)
+- **CrewAI**：Crew / Flow 抽象完整，但其 Agent、Task、Flow、Memory 和 Knowledge 会与 SourceOS 自有控制面形成双重业务模型。
+- **smolagents**：轻量且适合原型或局部 Agent，官方 API 仍标记为 experimental，缺少 SourceOS 所需的跨进程耐久工作流。
+- **Letta**：持久身份和记忆理念值得借鉴，但引入其 App Server 会产生第二份记忆、工具和身份事实源。
+
+### 19.5 LangGraph 任务图
+
+主任务图初始定义为：
+
+```text
+define_mission
+  -> select_seed_targets
+  -> plan_sources
+  -> dispatch_acquisition
+  -> assess_completeness
+      -> recover_target -> dispatch_acquisition
+      -> expand_sources -> dispatch_acquisition
+      -> process_media
+  -> synthesize
+  -> decide_monitoring
+  -> completed | monitoring | completed_with_gaps
+```
+
+浏览器探索、采集监督、媒体处理监督、研究综合和持续监控可以逐步拆成 LangGraph 子图。初期保持一个主 Agent 加确定性工具，不为展示“多 Agent”而提前引入不必要的角色协作。
+
+### 19.6 与 RQ 和 PostgreSQL 的关系
+
+LangGraph 节点负责决定和派发，不在单个节点内完成数小时采集或转写。RQ Worker 继续承担评论、弹幕、下载和 ASR 重任务；LangGraph 保存相关 Job ID 并等待或轮询确定性结果。
+
+每个产生外部副作用的操作必须带有 `mission_id`、`target_id`、`operation_type`、`idempotency_key` 和 `attempt_id`。恢复时先检查 SourceOS 业务事务和浏览器后置状态，再决定是否重放，避免 checkpoint 恢复造成重复下载、重复注册或重复采集。
+
+首版不依赖 LangGraph Agent Server、LangSmith、Browser Use Cloud 或其他托管平台。运行事实保存在 SourceOS 自有 PostgreSQL、文件库和活动记录中。
+
+## 20. 设计结论
 
 SourceOS 应新增一个自治浏览器研究运行时，而不是只新增一个浏览器采集插件。插件负责浏览器环境中的感知与执行；Agent 负责任务定义、规划和重规划；确定性能力负责可重复执行和完整性验证；本地 Worker 负责媒体与长任务；证据和记忆系统负责恢复、复用与人类可见。
 
