@@ -90,7 +90,7 @@ monitoring_decision: 是否以及为何进入持续监控
 ```text
 用户自然语言需求
   -> SourceOS API 与任务控制面
-  -> LangGraph OSS Agent Runtime：定义、规划、评估、恢复与重规划
+  -> Pi Agent Runtime：理解需求、局部规划、工具选择、评估与重规划
   -> 默认采集目录、自定义 Target Pack 与能力选择
   -> 任务调度
   -> 持久浏览器运行环境
@@ -456,9 +456,9 @@ monitoring: 已建立监控或明确判定无需监控
 - 报告中的每个证据引用都能返回真实材料。
 - 内置目录中目标 ID 唯一，软件升级后稳定 ID 和本地自定义包不被覆盖；
 - YAML 与 JSON 清单完成导出、重新导入和语义等价比较；
-- LangGraph checkpoint 恢复不会重复派发已存在的 RQ Job 或重复执行已完成的外部动作；
-- 删除 LangGraph checkpoint 后，SourceOS 中的任务、目标、证据和长期记忆仍然完整；
-- 禁用 Browser Use 后，所有已经适配的站点仍可通过 Playwright、扩展或确定性能力采集。
+- Pi Runtime 中途退出后，SourceOS 能依据 PostgreSQL 任务状态恢复，并且不会重复派发已有 RQ Job 或重复执行已完成的外部动作；
+- 删除 Pi 的临时消息或单次 Run 状态后，SourceOS 中的任务、目标、证据和长期记忆仍然完整；
+- 未知站点能够由 Pi 通过 Playwright、浏览器扩展和通用观察/动作工具自主探索，成功路径能够沉淀为确定性站点能力。
 
 ## 15. 建设顺序
 
@@ -650,112 +650,181 @@ Agent 可在无人值守任务中自行导入清单并采用默认 `merge` 策�
 
 导入导出同时提供 API、CLI 和界面入口。所有导入先产生预检报告，Agent 可以自行继续执行；人类也可以查看并修改预检结果。
 
-## 19. 开源 Agent 框架选型
+## 19. Pi Agent 框架选型
 
-完整的一手资料对比见：[SourceOS 自治浏览器研究 Agent 开源框架选型调研](../../technical-design/2026-08-08-open-source-agent-framework-selection-research.md)。
+完整的一手资料修正见：[SourceOS Pi Agent 框架修正调研](../../technical-design/2026-08-08-pi-agent-framework-correction-research.md)。
 
 ### 19.1 选型结论
 
-主编排框架采用：
+认知执行内核采用：
 
 ```text
-langgraph
-  + langgraph-checkpoint-postgres
+@earendil-works/pi-agent-core
+  + @earendil-works/pi-ai
 ```
 
 浏览器执行层采用：
 
 ```text
-Playwright + SourceOS 浏览器扩展 + 确定性站点能力
-  + Browser Use OSS（仅用于未知站点或能力漂移时的探索）
+Pi Agent
+  -> SourceOS Browser Tools
+     -> Playwright
+     -> SourceOS 浏览器扩展
+     -> 确定性站点能力
 ```
 
-选择 LangGraph 的原因：
+不引入额外的图编排框架或第二套浏览器 Agent 框架。Pi 直接通过 SourceOS 提供的浏览器观察、动作、网络检查和采集工具探索未知站点；成功路径由 SourceOS 能力注册中心固化。
 
-1. LangGraph 明确面向长时间、有状态 Agent 的低层编排，支持持久化、故障恢复和 replay，适合 SourceOS 的数小时或数天任务。[LangGraph 官方概览](https://docs.langchain.com/oss/python/langgraph/overview)
-2. 官方提供 PostgreSQL checkpointer，可直接复用 SourceOS 现有 PostgreSQL，而不需要新增另一套耐久运行基础设施。[LangGraph checkpointer integrations](https://docs.langchain.com/oss/python/integrations/checkpointers/index)
-3. 子图适合表达规划、来源发现、浏览器探索、采集监督、质量复核、报告生成和监控等边界清晰的子能力。[LangGraph subgraphs](https://docs.langchain.com/oss/python/langgraph/use-subgraphs)
-4. LangGraph 是 MIT 许可并可脱离 LangChain 其他产品独立使用。[LangGraph 官方仓库](https://github.com/langchain-ai/langgraph)
-5. SourceOS 已使用 Python、FastAPI、PostgreSQL、Redis 和 RQ，LangGraph 可以只接管 Agent 编排游标，不要求重建业务控制面和 Worker 体系。
+选择 Pi 的原因：
 
-### 19.2 框架边界
+1. `pi-agent-core` 是小型、可嵌入的有状态 Agent 循环，提供工具执行、参数 Schema、流式事件、上下文变换、中止、转向和追问队列，不要求业务迁就预设图或多角色模型。[Pi Agent Core README](https://github.com/earendil-works/pi/blob/main/packages/agent/README.md)
+2. `pi-ai` 提供多模型接入、流式输出和工具调用，模型供应商可以替换，不需要再引入大型 Agent 生态。[Pi 官方仓库](https://github.com/earendil-works/pi)
+3. Pi SDK 明确支持嵌入现有应用、自定义界面、自动化工作流和自定义工具，符合 SourceOS 将其作为执行内核而非产品控制面的方式。[Pi SDK](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/sdk.md)
+4. SourceOS 原有产品定义、技术 Issue 和技术方案已经采用 Pi；继续使用同一运行时保持架构连续性，避免同时维护两套 Agent 抽象。
+5. Pi 保持极简，长期任务可靠性继续由 SourceOS 的 PostgreSQL、RQ 和 APScheduler 提供，而不是为获得 checkpoint 再引入一整套框架。
 
-LangGraph 只拥有：
+### 19.2 当前包与版本基线
 
-- 当前任务图运行位置；
-- 轻量计划状态；
-- 待处理目标 ID、Job ID 和证据缺口 ID；
-- 当前失败、恢复和重规划上下文；
-- graph schema 版本和 checkpoint。
+截至 2026-08-08，npm 官方注册表返回：
 
-SourceOS 始终拥有：
+```text
+@earendil-works/pi-agent-core@0.84.1
+@earendil-works/pi-ai@0.84.1
+Node.js >= 22.19.0
+License: MIT
+```
 
-- 用户需求、任务契约和计划版本；
+实施时必须再次读取 npm 官方 `latest` 元数据，随后在 lockfile 中精确锁定经过验证的版本，不使用 caret 让 `0.x` 小版本自动漂移。[当前 npm 元数据](https://registry.npmjs.org/%40earendil-works%2Fpi-agent-core/latest)
+
+旧包 `@mariozechner/pi-agent-core@0.73.1` 已由 npm 官方标记弃用，并明确要求迁移到 `@earendil-works/pi-agent-core`，不得新增旧 scope 依赖。[旧包 npm 元数据](https://registry.npmjs.org/%40mariozechner%2Fpi-agent-core/latest)
+
+### 19.3 SourceOS 与 Pi 的边界
+
+Pi 负责：
+
+- 理解当前任务和阶段目标；
+- 生成或修订局部计划；
+- 选择并调用 SourceOS 工具；
+- 根据工具结果继续、转向、追问或结束当前 Run；
+- 发现证据缺口、选择新目标和提出恢复策略；
+- 通过浏览器工具探索未知站点；
+- 通过事件流报告思考回合、工具执行和结果。
+
+SourceOS 始终负责：
+
+- 用户需求、Mission 状态机和任务契约版本；
 - 默认目录、自定义清单、来源、目标和 Target Pack；
 - 评论、弹幕、媒体、字幕、逐字稿和原始材料；
-- 完整性账本和完成门槛；
-- 账号、邮箱、凭据引用和浏览器档案；
+- 完整性账本与 `completed` 判定；
+- 账号、邮箱、凭据、浏览器档案和持久会话；
 - 站点能力、成功轨迹、版本和漂移状态；
-- 监控契约、游标、水位和运行历史；
-- 长期研究记忆、证据关系和 Obsidian 文档；
-- RQ 重任务、APScheduler 定时任务和本地文件库。
+- RQ Job、重试、租约、幂等、超时和资源队列；
+- APScheduler 监控触发器、游标和水位；
+- 长期研究记忆、证据关系和 Obsidian 文档。
 
-全量评论、弹幕、HTML、媒体和逐字稿不得写入 LangGraph checkpoint。checkpoint 只保存 ID、摘要和编排游标；节点恢复时从 SourceOS 数据库读取最新业务事实。
+Pi 的进程内消息、`sessionId` 或单次 Agent 状态都不是 SourceOS 的业务事实源。Pi Run 丢失后，系统必须能够从 PostgreSQL 中的 Mission、Operation、Job、Artifact 和 Memory 记录恢复。
 
-### 19.3 浏览器框架边界
+### 19.4 轻量接入方式
 
-Browser Use 是可插拔的探索执行器，不是 SourceOS 的总 Agent 框架，也不负责判断采集是否完整。[Browser Use 官方仓库](https://github.com/browser-use/browser-use)
-
-执行优先级保持为：
+SourceOS 保持 Python / FastAPI 主控制面，增加一个隔离的 TypeScript Runtime Adapter：
 
 ```text
-SourceOS 已验证站点能力
-  -> Playwright / 扩展确定性操作
-  -> Browser Use 未知站点探索
-  -> 把成功轨迹固化为新的 SourceOS 站点能力
+SourceOS Python Control Plane
+  -> AgentRuntimePort
+  -> PiSubprocessAdapter（首版）
+     -> @earendil-works/pi-agent-core
+     -> @earendil-works/pi-ai
+  -> JSONL 事件与工具协议
+  -> SourceOS Tool Gateway
+  -> PostgreSQL / RQ / Browser Runtime / File Store
 ```
 
-禁用 Browser Use 后，所有已经适配的站点仍必须能够正常采集。更换浏览器探索库不得影响任务、证据、账号和长期记忆。
+领域层只依赖 SourceOS 自己的 `AgentRuntimePort`、`AgentRunEnvelope`、`AgentEvent` 和 `AgentToolResult`，不得直接依赖 Pi 类型。首版使用 Node 子进程和 JSONL 协议降低部署复杂度；需要更高吞吐时可以替换为常驻 Pi Worker，而不改变业务对象和工具契约。
 
-### 19.4 其他框架的判定
+首版只采用 `pi-agent-core` 和 `pi-ai`。`pi-coding-agent` 可以作为源码和会话管理参考，但不作为 SourceOS 业务控制面，避免带入不需要的编码工具、CLI 和项目约定。
 
-- **PydanticAI**：类型安全、模型中立并与 FastAPI 风格高度一致，但耐久执行需要 Temporal、DBOS、Prefect 或 Restate 等第二套运行时。首版继续用 Pydantic 定义业务和工具 Schema，不叠加第二套主 Agent loop。[PydanticAI 官方仓库](https://github.com/pydantic/pydantic-ai)
-- **Microsoft Agent Framework**：是 AutoGen 的官方继任者，MIT 许可，具备图工作流、checkpoint 和多 Agent 能力；但现阶段 Python 内置生产持久化与 SourceOS 的 PostgreSQL＋RQ 体系不如 LangGraph 直接匹配，列为重点观察的第二候选。[MAF 官方仓库](https://github.com/microsoft/agent-framework)
-- **AutoGen**：官方仓库已标记为维护模式并建议新项目使用 Microsoft Agent Framework，因此不作为新系统基础。[AutoGen 官方仓库](https://github.com/microsoft/autogen)
-- **CrewAI**：Crew / Flow 抽象完整，但其 Agent、Task、Flow、Memory 和 Knowledge 会与 SourceOS 自有控制面形成双重业务模型。
-- **smolagents**：轻量且适合原型或局部 Agent，官方 API 仍标记为 experimental，缺少 SourceOS 所需的跨进程耐久工作流。
-- **Letta**：持久身份和记忆理念值得借鉴，但引入其 App Server 会产生第二份记忆、工具和身份事实源。
+### 19.5 不使用图框架的耐久任务循环
 
-### 19.5 LangGraph 任务图
-
-主任务图初始定义为：
+长期任务由 SourceOS 自有 PostgreSQL 状态机驱动：
 
 ```text
-define_mission
-  -> select_seed_targets
-  -> plan_sources
-  -> dispatch_acquisition
-  -> assess_completeness
-      -> recover_target -> dispatch_acquisition
-      -> expand_sources -> dispatch_acquisition
-      -> process_media
-  -> synthesize
-  -> decide_monitoring
-  -> completed | monitoring | completed_with_gaps
+received
+  -> defining
+  -> planning
+  -> acquiring
+  -> assessing
+     -> recovering -> acquiring
+     -> expanding -> acquiring
+     -> processing
+  -> synthesizing
+  -> monitoring | completed | completed_with_gaps
 ```
 
-浏览器探索、采集监督、媒体处理监督、研究综合和持续监控可以逐步拆成 LangGraph 子图。初期保持一个主 Agent 加确定性工具，不为展示“多 Agent”而提前引入不必要的角色协作。
+每次调度只创建一个可恢复的 `AgentRun`：
 
-### 19.6 与 RQ 和 PostgreSQL 的关系
+1. SourceOS 从数据库读取 Mission、当前阶段、目标 ID、Job ID 和证据缺口；
+2. 构造有限的 `AgentRunEnvelope`，交给 Pi；
+3. Pi 自主调用工具，直到当前阶段目标完成、需要等待异步 Job 或遇到不可恢复阻断；
+4. SourceOS 订阅 Pi 事件并持续写入工作记忆和 Run 状态；
+5. 工具通过事务写入业务结果，并返回稳定 ID；
+6. Run 结束后，SourceOS 根据确定性结果迁移 Mission 状态；
+7. 需要继续时，由 RQ 完成事件、APScheduler 或数据库中的下一运行时间触发新的 Pi Run。
 
-LangGraph 节点负责决定和派发，不在单个节点内完成数小时采集或转写。RQ Worker 继续承担评论、弹幕、下载和 ASR 重任务；LangGraph 保存相关 Job ID 并等待或轮询确定性结果。
+因此，Pi 负责“这一回合应该做什么”，SourceOS 负责“任务现在真实处于什么状态、如何恢复和何时再次运行”。
 
-每个产生外部副作用的操作必须带有 `mission_id`、`target_id`、`operation_type`、`idempotency_key` 和 `attempt_id`。恢复时先检查 SourceOS 业务事务和浏览器后置状态，再决定是否重放，避免 checkpoint 恢复造成重复下载、重复注册或重复采集。
+### 19.6 Pi 浏览器工具集
 
-首版不依赖 LangGraph Agent Server、LangSmith、Browser Use Cloud 或其他托管平台。运行事实保存在 SourceOS 自有 PostgreSQL、文件库和活动记录中。
+第一批工具至少包括：
+
+- `search_target_catalog`：搜索默认和自定义采集对象；
+- `import_target_list` / `export_target_list`：管理目标包；
+- `browser_observe`：读取页面语义、截图、标签页和关键状态；
+- `browser_navigate` / `browser_act`：导航、点击、输入、滚动和播放器控制；
+- `browser_inspect_network`：检查页面请求、响应、游标和媒体信息；
+- `collect_full_comments`：派发全量评论和回复任务；
+- `collect_full_danmaku`：派发全量弹幕任务；
+- `transcribe_full_media`：派发完整媒体转写任务；
+- `read_job_status`：读取 RQ Job 和完整性账本；
+- `register_site_capability`：保存并验证成功路径；
+- `schedule_monitor`：建立或修改持续监控；
+- `retrieve_evidence`：按 ID 和查询读取有限证据；
+- `write_mission_memory`：更新任务工作记忆和下一步摘要。
+
+Pi 面对未知站点时先调用通用浏览器工具探索；已有站点能力存在时优先调用确定性工具。模型不直接声明“已经全量”，只能读取 SourceOS 完整性验收器的结果。
+
+### 19.7 幂等、恢复与状态大小
+
+每个产生外部动作的工具必须接收：
+
+```text
+mission_id
+target_id
+operation_type
+idempotency_key
+attempt_id
+```
+
+SourceOS 在执行前查询 Operation 表和浏览器后置状态。相同幂等键已经成功时返回既有结果；仍在运行时返回 Job ID；失败可恢复时创建新 attempt。Pi Run 重试不得造成重复下载、重复注册、重复评论写入或重复监控。
+
+传给 Pi 的上下文只包含必要 ID、摘要、当前计划和有限证据片段。全量评论、弹幕、HTML、媒体和逐字稿保存在 SourceOS 中，由 `transformContext` 和检索工具按需加载，避免 Agent 消息随资料规模线性膨胀。
+
+### 19.8 升级与替换
+
+Pi 通过 Adapter 隔离，升级必须通过以下契约测试：
+
+- Agent 事件顺序和结束语义；
+- 工具参数校验、并行和顺序执行；
+- `beforeToolCall` / `afterToolCall` 行为；
+- abort、continue、steer 和 follow-up；
+- 模型切换与上下文转换；
+- 子进程退出与 Run 恢复；
+- 工具幂等和 RQ Job 不重复派发；
+- 浏览器探索轨迹和站点能力沉淀。
+
+如果未来替换 Pi，SourceOS 的 Mission、Target、Artifact、CompletenessLedger、Monitor 和长期记忆无需迁移，只替换 `AgentRuntimePort` 的实现。
 
 ## 20. 设计结论
 
-SourceOS 应新增一个自治浏览器研究运行时，而不是只新增一个浏览器采集插件。插件负责浏览器环境中的感知与执行；Agent 负责任务定义、规划和重规划；确定性能力负责可重复执行和完整性验证；本地 Worker 负责媒体与长任务；证据和记忆系统负责恢复、复用与人类可见。
+SourceOS 应新增一个以 Pi 为认知执行内核的自治浏览器研究运行时，而不是只新增一个浏览器采集插件。插件负责浏览器环境中的感知与执行；Pi 负责任务理解、局部规划、工具选择和重规划；SourceOS PostgreSQL 状态机负责长期任务事实与恢复；确定性能力负责可重复执行和完整性验证；本地 Worker 负责媒体与长任务；证据和记忆系统负责恢复、复用与人类可见。
 
 系统的核心产品承诺是：用户提出需求，Agent 自主管理身份和浏览器，自行完成全量采集、完整转写、跨站探索、持续监控和研究整理，并把全部材料与结论以可追溯方式交付到 SourceOS 和 Obsidian。
